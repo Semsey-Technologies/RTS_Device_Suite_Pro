@@ -1,0 +1,304 @@
+:root {
+    --primary-bg: #1a1a1a;
+    --secondary-bg: #2d2d2d;
+    --card-bg: #3d3d3d;
+    --card-elevated: #4d4d4d;
+    --accent-color: #00BFFF;
+    --text-primary: #FFFFFF;
+    --text-secondary: #CCCCCC;
+    --divider: rgba(255, 255, 255, 0.2);
+    --border-radius: 12px;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+    height: 100% !important;
+    width: 100% !important;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: var(--primary-bg);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.app-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: 100% !important;
+    width: 100% !important;
+    background-color: var(--primary-bg);
+    overflow: hidden;
+}
+
+/* Top Navigation */
+.top-nav {
+    display: flex;
+    background-color: #2d2d2d;
+    border-bottom: 2px solid var(--accent-color);
+    padding: 0 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    height: 60px;
+    min-height: 60px;
+    flex-shrink: 0;
+    align-items: stretch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    position: relative;
+    z-index: 100;
+}
+
+.top-nav::-webkit-scrollbar {
+    display: none;
+}
+
+.nav-item {
+    padding: 0 18px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+    border-bottom: 3px solid transparent;
+    box-sizing: border-box;
+    flex-shrink: 0;
+}
+
+.nav-item.active {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+    background: linear-gradient(to bottom, transparent, rgba(0, 191, 255, 0.05));
+}
+
+/* Main Layout */
+.main-container {
+    display: flex;
+    flex: 1;
+    height: calc(100% - 60px); /* Explicit height calculation to prevent collapse */
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
+    z-index: 10;
+    background-color: var(--primary-bg);
+}
+
+/* Sidebar */
+.sidebar {
+    width: 280px;
+    max-width: 35%;
+    min-width: 150px;
+    background-color: var(--secondary-bg);
+    border-right: 1px solid var(--divider);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.sidebar-header {
+    padding: 16px;
+    border-bottom: 1px solid var(--divider);
+}
+
+#search-input {
+    width: 100%;
+    background-color: var(--card-bg);
+    border: 1px solid var(--divider);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    outline: none;
+}
+
+#search-input:focus {
+    border-color: var(--accent-color);
+}
+
+.view-mode-controls {
+    display: flex;
+    gap: 8px;
+}
+
+#view-mode-selector {
+    flex: 1;
+    background-color: var(--card-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--divider);
+    padding: 6px;
+    border-radius: 4px;
+    outline: none;
+}
+
+.sidebar-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* Content Viewer */
+.content-viewer {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--primary-bg);
+    min-width: 0; /* Prevents flex children from overflowing */
+}
+
+.content-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--divider);
+    background-color: var(--primary-bg);
+}
+
+.content-header h2 {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.viewer-display {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+}
+
+.empty-state {
+    display: flex;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+/* List/Grid Styles */
+.item-list { display: flex; flex-direction: column; }
+.item-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; padding: 16px; }
+.item-gallery { display: flex; flex-direction: column; gap: 24px; }
+
+.list-item {
+    display: flex;
+    padding: 12px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--divider);
+}
+
+.list-item:hover, .list-item.selected { background-color: var(--card-elevated); }
+
+.grid-item {
+    aspect-ratio: 1;
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    background-color: var(--card-bg);
+    cursor: pointer;
+    position: relative;
+    border: 2px solid transparent;
+}
+
+.grid-item.selected {
+    border-color: var(--accent-color);
+}
+
+.video-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.5);
+    color: white;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+}
+
+.grid-item img, .grid-item video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Chat Styles (Messages) */
+.chat-thread {
+    display: flex;
+    padding: 12px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--divider);
+    align-items: center;
+}
+
+.chat-thread:hover, .chat-thread.selected { background-color: var(--card-elevated); }
+
+.avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background-color: var(--accent-color);
+    margin-right: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    color: #000;
+}
+
+.thread-info { flex: 1; min-width: 0; }
+.thread-name { font-weight: 600; margin-bottom: 2px; }
+.thread-preview { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.message-bubble {
+    max-width: 80%;
+    padding: 12px 16px;
+    border-radius: var(--border-radius);
+    margin-bottom: 12px;
+    position: relative;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.message-incoming { align-self: flex-start; background-color: var(--card-elevated); border-bottom-left-radius: 4px; }
+.message-outgoing { align-self: flex-end; background-color: var(--accent-color); color: #000; border-bottom-right-radius: 4px; }
+
+.message-time { font-size: 10px; margin-top: 4px; opacity: 0.7; text-align: right; }
+
+.mms-attachment {
+    margin-top: 8px;
+    border-radius: 8px;
+    overflow: hidden;
+    max-width: 100%;
+    display: block;
+}
+
+/* Media Embedding */
+.media-preview {
+    width: 100%;
+    max-height: 80vh;
+    object-fit: contain;
+    border-radius: var(--border-radius);
+}
+
+embed {
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: var(--border-radius);
+}
