@@ -28,9 +28,9 @@ object ArchiveManager {
             ArchiveFormat.ZIP -> createZip(files, outputFile, options)
             ArchiveFormat.SEVEN_Z -> create7z(files, outputFile, options)
             ArchiveFormat.TAR -> createTar(files, outputFile, options)
-            ArchiveFormat.GZIP -> createGzip(files, outputFile, options)
-            ArchiveFormat.BZIP2 -> createBzip2(files, outputFile, options)
-            ArchiveFormat.XZ -> createXz(files, outputFile, options)
+            ArchiveFormat.TAR_GZ -> createTarGz(files, outputFile, options)
+            ArchiveFormat.TAR_BZ2 -> createTarBz2(files, outputFile, options)
+            ArchiveFormat.TAR_XZ -> createTarXz(files, outputFile, options)
         }
     }
 
@@ -94,27 +94,27 @@ object ArchiveManager {
         }
     }
 
-    private fun createGzip(files: List<File>, outputFile: File, options: ArchiveOptions) {
-        if (files.isEmpty()) return
-        val file = files[0]
-        GzipCompressorOutputStream(FileOutputStream(outputFile)).use { gzos ->
-            file.inputStream().use { it.copyTo(gzos) }
+    private fun createTarGz(files: List<File>, outputFile: File, options: ArchiveOptions) {
+        TarArchiveOutputStream(GzipCompressorOutputStream(BufferedOutputStream(FileOutputStream(outputFile)))).use { tos ->
+            files.forEach { file ->
+                addToArchive(tos, file, "", options)
+            }
         }
     }
 
-    private fun createBzip2(files: List<File>, outputFile: File, options: ArchiveOptions) {
-        if (files.isEmpty()) return
-        val file = files[0]
-        BZip2CompressorOutputStream(FileOutputStream(outputFile)).use { bzos ->
-            file.inputStream().use { it.copyTo(bzos) }
+    private fun createTarBz2(files: List<File>, outputFile: File, options: ArchiveOptions) {
+        TarArchiveOutputStream(BZip2CompressorOutputStream(BufferedOutputStream(FileOutputStream(outputFile)))).use { tos ->
+            files.forEach { file ->
+                addToArchive(tos, file, "", options)
+            }
         }
     }
 
-    private fun createXz(files: List<File>, outputFile: File, options: ArchiveOptions) {
-        if (files.isEmpty()) return
-        val file = files[0]
-        XZCompressorOutputStream(FileOutputStream(outputFile)).use { xzos ->
-            file.inputStream().use { it.copyTo(xzos) }
+    private fun createTarXz(files: List<File>, outputFile: File, options: ArchiveOptions) {
+        TarArchiveOutputStream(XZCompressorOutputStream(BufferedOutputStream(FileOutputStream(outputFile)))).use { tos ->
+            files.forEach { file ->
+                addToArchive(tos, file, "", options)
+            }
         }
     }
 

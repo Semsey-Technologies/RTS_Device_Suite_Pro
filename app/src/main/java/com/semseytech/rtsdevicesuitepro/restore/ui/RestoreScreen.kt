@@ -1,5 +1,9 @@
 package com.semseytech.rtsdevicesuitepro.restore.ui
 
+import android.app.role.RoleManager
+import android.content.Intent
+import android.os.Build
+import android.provider.Telephony
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -11,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,7 +29,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 import com.semseytech.rtsdevicesuitepro.restore.RestoreViewModel
+import com.semseytech.rtsdevicesuitepro.backup.model.RestoreReport
 import com.semseytech.rtsdevicesuitepro.backup.ui.CategoryCard
 import com.semseytech.rtsdevicesuitepro.backup.ui.BackupItemRow
 import com.semseytech.rtsdevicesuitepro.ui.theme.LocalTheme
@@ -32,16 +39,31 @@ import com.semseytech.rtsdevicesuitepro.ui.theme.ThemeManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RestoreScreen(viewModel: RestoreViewModel = viewModel()) {
+fun RestoreScreen(
+    viewModel: RestoreViewModel = viewModel(),
+    onBack: () -> Unit = {}
+) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val currentTheme = LocalTheme.current
     val scale = ThemeManager.uiScale
+    val scope = rememberCoroutineScope()
 
     val pickArchiveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let { viewModel.loadArchive(it) }
+    }
+
+    val defaultSmsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        viewModel.checkDefaultSmsStatus()
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.checkDefaultSmsStatus()
     }
 
     Scaffold(
@@ -57,11 +79,42 @@ fun RestoreScreen(viewModel: RestoreViewModel = viewModel()) {
                     ) 
                 },
                 navigationIcon = {
-                    IconButton(onClick = { /* Handle back if needed */ }) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 },
                 actions = {
+                    if (uiState.categories.any { it.id == "sms" } && !uiState.isDefaultSmsApp) {
+                        TextButton(onClick = {
+                            try {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                    val roleManager = context.getSystemService(RoleManager::class.java)
+                                    if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_SMS)) {
+                                        val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
+                                        defaultSmsLauncher.launch(intent)
+                                    } else {
+                                        val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
+                                            putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, context.packageName)
+                                        }
+                                        defaultSmsLauncher.launch(intent)
+                                    }
+                                } else {
+                                    val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
+                                        putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, context.packageName)
+                                    }
+                                    defaultSmsLauncher.launch(intent)
+                                }
+                            } catch (e: Exception) {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Could not open SMS settings: ${e.message}")
+                                }
+                            }
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.Message, contentDescription = null, tint = currentTheme.accentColor)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Set Default SMS", color = currentTheme.accentColor)
+                        }
+                    }
                     if (uiState.categories.isNotEmpty()) {
                         IconButton(onClick = { viewModel.clearRestoreCache() }) {
                             Icon(Icons.Default.DeleteSweep, contentDescription = "Clear Cache", tint = currentTheme.accentColor)
@@ -71,7 +124,7 @@ fun RestoreScreen(viewModel: RestoreViewModel = viewModel()) {
                         Icon(Icons.Default.FileOpen, contentDescription = "Open Archive", tint = currentTheme.accentColor)
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent
                 )
             )
@@ -153,18 +206,20 @@ fun RestoreScreen(viewModel: RestoreViewModel = viewModel()) {
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    val isError = uiState.status.contains("failed", ignoreCase = true)
                     Icon(
-                        Icons.Default.CloudDownload, 
+                        if (isError) Icons.Default.ErrorOutline else Icons.Default.CloudDownload, 
                         contentDescription = null, 
                         modifier = Modifier.size(80.dp * scale),
-                        tint = currentTheme.accentColor.copy(alpha = 0.6f)
+                        tint = if (isError) Color.Red.copy(alpha = 0.6f) else currentTheme.accentColor.copy(alpha = 0.6f)
                     )
                     Spacer(Modifier.height(24.dp))
                     Text(
-                        "Select a backup archive to begin restoration.", 
-                        color = Color.White.copy(alpha = 0.7f),
+                        if (uiState.status != "Select an archive") uiState.status else "Select a backup archive to begin restoration.", 
+                        color = if (isError) Color.Red.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.7f),
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 48.dp)
+                        modifier = Modifier.padding(horizontal = 48.dp),
+                        style = if (isError) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge
                     )
                     Spacer(Modifier.height(32.dp))
                     Button(
@@ -173,7 +228,7 @@ fun RestoreScreen(viewModel: RestoreViewModel = viewModel()) {
                         shape = RoundedCornerShape(30.dp),
                         modifier = Modifier.height(48.dp * scale).padding(horizontal = 32.dp)
                     ) {
-                        Text("Pick Archive", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text(if (isError) "Try Again" else "Pick Archive", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 }
             } else {
@@ -228,7 +283,11 @@ fun RestoreScreen(viewModel: RestoreViewModel = viewModel()) {
                                 }
                                 items(category.items, key = { "${category.id}_${it.id}" }) { item ->
                                     Box(modifier = Modifier.padding(start = 24.dp)) {
-                                        BackupItemRow(item = item, onSelect = { viewModel.toggleItemSelection(category.id, item.id) })
+                                        BackupItemRow(
+                                            item = item,
+                                            viewMode = uiState.viewMode,
+                                            onSelect = { viewModel.toggleItemSelection(category.id, item.id) }
+                                        )
                                     }
                                 }
                             }
@@ -274,7 +333,7 @@ fun MasterRestoreButton(isSelected: Boolean, onToggle: () -> Unit) {
 }
 
 @Composable
-fun RestoreReportView(report: com.semseytech.rtsdevicesuitepro.restore.RestoreReport, onDismiss: () -> Unit) {
+fun RestoreReportView(report: RestoreReport, onDismiss: () -> Unit) {
     val currentTheme = LocalTheme.current
     Column(
         modifier = Modifier

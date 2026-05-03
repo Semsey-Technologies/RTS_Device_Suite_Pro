@@ -5,11 +5,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.sp
+import com.semseytech.rtsdevicesuitepro.ui.components.FileDisplaySettings
+import com.semseytech.rtsdevicesuitepro.ui.theme.LocalTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -23,41 +24,40 @@ fun CategoryViewerTopBar(
     onViewMenuToggle: (Boolean) -> Unit,
     showGroupMenu: Boolean,
     onGroupMenuToggle: (Boolean) -> Unit,
-    viewMode: ViewMode,
-    onSortOptionSelected: (SortOption) -> Unit,
-    onSortOrderSelected: (SortOrder) -> Unit,
-    onViewModeSelected: (ViewMode) -> Unit,
-    onGroupBySelected: (GroupByOption) -> Unit,
-    sortOption: SortOption,
-    sortOrder: SortOrder,
+    displaySettings: FileDisplaySettings,
+    onSettingsChanged: (FileDisplaySettings) -> Unit,
+    onExitSelection: () -> Unit,
     onSelectAll: () -> Unit,
     onDeselectAll: () -> Unit,
-    onMoveSelected: () -> Unit,
-    onCopySelected: () -> Unit,
     onBack: () -> Unit
 ) {
+    val currentTheme = LocalTheme.current
     TopAppBar(
-        title = {
+        title = { 
             Text(
-                text = if (isSelectionMode) "> SELECT MODE: $selectedCount" else "> ${category.name}",
-                color = NeonBlue,
+                text = if (isSelectionMode) "> SELECT MODE: $selectedCount" else "> ${category.name}", 
+                color = currentTheme.accentColor,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 18.sp,
-                style = TextStyle(shadow = Shadow(color = NeonBlue.copy(alpha = 0.5f), blurRadius = 8f))
-            )
+                style = TextStyle(shadow = Shadow(color = currentTheme.accentColor.copy(alpha = 0.5f), blurRadius = 8f))
+            ) 
         },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black.copy(alpha = 0.8f)),
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = currentTheme.startColor.copy(alpha = 0.8f)),
         navigationIcon = {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+            if (isSelectionMode) {
+                IconButton(onClick = onExitSelection) {
+                    Icon(Icons.Default.Close, "Cancel", tint = currentTheme.textColor)
+                }
+            } else {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = currentTheme.textColor)
+                }
             }
         },
         actions = {
             if (isSelectionMode) {
-                IconButton(onClick = onMoveSelected) { Icon(Icons.Default.DriveFileMove, "Move Selected", tint = NeonGreen) }
-                IconButton(onClick = onCopySelected) { Icon(Icons.Default.ContentCopy, "Copy Selected", tint = NeonGreen) }
-                IconButton(onClick = onSelectAll) { Icon(Icons.Default.SelectAll, "Select All", tint = NeonGreen) }
-                IconButton(onClick = onDeselectAll) { Icon(Icons.Default.Deselect, "Deselect All", tint = Color.Gray) }
+                IconButton(onClick = onSelectAll) { Icon(Icons.Default.SelectAll, "Select All", tint = currentTheme.accentColor) }
+                IconButton(onClick = onDeselectAll) { Icon(Icons.Default.Deselect, "Deselect All", tint = currentTheme.textColor.copy(alpha = 0.5f)) }
             } else {
                 StorageAnalyzerMenus(
                     showSortMenu = showSortMenu,
@@ -66,13 +66,8 @@ fun CategoryViewerTopBar(
                     onViewMenuToggle = onViewMenuToggle,
                     showGroupMenu = showGroupMenu,
                     onGroupMenuToggle = onGroupMenuToggle,
-                    viewMode = viewMode,
-                    sortOption = sortOption,
-                    sortOrder = sortOrder,
-                    onSortOptionSelected = onSortOptionSelected,
-                    onSortOrderSelected = onSortOrderSelected,
-                    onViewModeSelected = onViewModeSelected,
-                    onGroupBySelected = onGroupBySelected
+                    displaySettings = displaySettings,
+                    onSettingsChanged = onSettingsChanged
                 )
             }
         }

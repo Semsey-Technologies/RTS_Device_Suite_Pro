@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -25,10 +26,19 @@ import androidx.navigation.compose.rememberNavController
 import com.semseytech.rtsdevicesuitepro.navigation.Screen
 import com.semseytech.rtsdevicesuitepro.navigation.SetupNavGraph
 import com.semseytech.rtsdevicesuitepro.ui.components.BottomNavBar
+import com.semseytech.rtsdevicesuitepro.ui.components.DashboardHeader
 import com.semseytech.rtsdevicesuitepro.ui.theme.RTSDeviceSuiteProTheme
+import com.semseytech.rtsdevicesuitepro.ui.permissions.PermissionExplanationDialog
+import com.semseytech.rtsdevicesuitepro.ui.permissions.PermissionPrefs
+
+import com.semseytech.rtsdevicesuitepro.automation.engine.AutomationEngine
+import com.semseytech.rtsdevicesuitepro.automation.engine.TriggerManager
 
 class MainActivity : ComponentActivity() {
-    private val permissionState = mutableStateOf(false)
+    private lateinit var triggerManager: TriggerManager
+    private lateinit var permissionPrefs: PermissionPrefs
+    private var permissionState = mutableStateOf(false)
+    private var showExplanation by mutableStateOf(false)
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -38,6 +48,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        permissionPrefs = PermissionPrefs(this)
+        val engine = AutomationEngine(this)
+        triggerManager = TriggerManager(this, engine)
+        triggerManager.start()
+
         enableEdgeToEdge()
         
         checkAndRequestPermissions()
@@ -48,7 +64,30 @@ class MainActivity : ComponentActivity() {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
+                if (showExplanation) {
+                    PermissionExplanationDialog(
+                        onConfirm = {
+                            showExplanation = false
+                            permissionPrefs.markGlobalExplanationShown()
+                            launchPermissionRequest()
+                            checkManageExternalStorage()
+                        },
+                        onDismiss = {
+                            showExplanation = false
+                        },
+                        onNavigateToHelp = {
+                            showExplanation = false
+                            navController.navigate(Screen.HelpAndPermissions.route)
+                        }
+                    )
+                }
+
                 Scaffold(
+                    topBar = {
+                        DashboardHeader(onNavigate = { route ->
+                            navController.navigate(route)
+                        })
+                    },
                     bottomBar = {
                         BottomNavBar(
                             currentRoute = currentRoute,
@@ -82,20 +121,56 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        if (::triggerManager.isInitialized) {
+            triggerManager.stop()
+        }
+    }
+
     private fun checkAndRequestPermissions() {
-        val permissions = mutableListOf<String>()
+        val permissions = getRequiredPermissions()
+
+        val allStandardGranted = permissions.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
         
-        // SMS
+        val allSpecialGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else true
+
+        if ((!allStandardGranted || !allSpecialGranted) && !permissionPrefs.isGlobalExplanationShown()) {
+            showExplanation = true
+        } else {
+            permissionState.value = true
+            if (!allStandardGranted || !allSpecialGranted) {
+                // If we already showed explanation once, just launch request
+                launchPermissionRequest()
+            }
+        }
+    }
+
+    private fun launchPermissionRequest() {
+        requestPermissionLauncher.launch(getRequiredPermissions().toTypedArray())
+    }
+
+    private fun getRequiredPermissions(): List<String> {
+        val permissions = mutableListOf<String>()
         permissions.add(Manifest.permission.READ_SMS)
-        // Contacts
         permissions.add(Manifest.permission.READ_CONTACTS)
         permissions.add(Manifest.permission.WRITE_CONTACTS)
-        // Call Log
         permissions.add(Manifest.permission.READ_CALL_LOG)
         permissions.add(Manifest.permission.WRITE_CALL_LOG)
+        permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        permissions.add(Manifest.permission.READ_PHONE_STATE)
+        permissions.add(Manifest.permission.GET_ACCOUNTS)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
 
-        // Storage
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
             permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
             permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
             permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
@@ -103,18 +178,10 @@ class MainActivity : ComponentActivity() {
             permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
+        return permissions
+    }
 
-        val allGranted = permissions.all {
-            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
-        }
-
-        if (!allGranted) {
-            requestPermissionLauncher.launch(permissions.toTypedArray())
-        } else {
-            permissionState.value = true
-        }
-
-        // Handle MANAGE_EXTERNAL_STORAGE for Android 11+
+    private fun checkManageExternalStorage() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
                 val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)

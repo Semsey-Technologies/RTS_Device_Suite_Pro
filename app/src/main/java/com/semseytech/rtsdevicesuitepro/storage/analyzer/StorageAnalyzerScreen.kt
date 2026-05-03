@@ -2,6 +2,8 @@ package com.semseytech.rtsdevicesuitepro.storage.analyzer
 
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.semseytech.rtsdevicesuitepro.ui.components.FileDisplaySettings
+import com.semseytech.rtsdevicesuitepro.ui.theme.LocalTheme
 
 @Composable
 fun StorageAnalyzerScreen(
@@ -12,9 +14,10 @@ fun StorageAnalyzerScreen(
     val uiState by viewModel.uiState.collectAsState()
     val isSelectionMode by viewModel.isSelectionMode.collectAsState()
     val selectedFiles by viewModel.selectedFiles.collectAsState()
+    val theme = LocalTheme.current
     
     val displaySettingsMap by viewModel.displaySettingsMap.collectAsState()
-    val settings = displaySettingsMap["DASHBOARD"] ?: DisplaySettings()
+    val settings = displaySettingsMap["DASHBOARD"] ?: FileDisplaySettings()
     
     val sortOption = settings.sortOption
     val sortOrder = settings.sortOrder
@@ -41,7 +44,7 @@ fun StorageAnalyzerScreen(
     }
 
     Scaffold(
-        containerColor = DeepDark,
+        containerColor = theme.startColor,
         topBar = {
             StorageAnalyzerTopBar(
                 isSelectionMode = isSelectionMode,
@@ -52,13 +55,8 @@ fun StorageAnalyzerScreen(
                 onViewMenuToggle = { showViewMenu = it },
                 showGroupMenu = showGroupMenu,
                 onGroupMenuToggle = { showGroupMenu = it },
-                viewMode = viewMode,
-                sortOption = sortOption,
-                sortOrder = sortOrder,
-                onSortOptionSelected = { viewModel.setSortOption(it, "DASHBOARD") },
-                onSortOrderSelected = { viewModel.setSortOrder(it, "DASHBOARD") },
-                onViewModeSelected = { viewModel.setViewMode(it, "DASHBOARD") },
-                onGroupBySelected = { viewModel.setGroupBy(it, "DASHBOARD") },
+                displaySettings = settings,
+                onSettingsChanged = { viewModel.updateSettingsForScope("DASHBOARD") { _ -> it } },
                 onRefresh = { viewModel.runFullStorageScan() },
                 onExitSelection = { viewModel.exitSelectionMode() },
                 onSelectAll = { viewModel.selectAll(uiState.largestFiles) },

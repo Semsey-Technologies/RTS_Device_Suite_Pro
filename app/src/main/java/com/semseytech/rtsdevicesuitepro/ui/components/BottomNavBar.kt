@@ -6,10 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.CleaningServices
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -23,59 +20,53 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.semseytech.rtsdevicesuitepro.navigation.Screen
-import com.semseytech.rtsdevicesuitepro.ui.theme.LocalTheme
+
+val NavBarBackground = Color(0xFF020817)
+val NeonBlue = Color(0xFF00BFFF)
 
 @Composable
 fun BottomNavBar(currentRoute: String?, onNavigate: (String) -> Unit) {
-    val currentTheme = LocalTheme.current
     Surface(
-        color = currentTheme.endColor.copy(alpha = 0.98f),
+        color = NavBarBackground.copy(alpha = 0.95f),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .navigationBarsPadding(),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            BottomButton(Icons.Default.Home, "Home", currentRoute == Screen.Dashboard.route, currentTheme.accentColor) { onNavigate(Screen.Dashboard.route) }
-            BottomButton(Icons.Default.History, "Recovery", currentRoute == Screen.Recovery.route, currentTheme.accentColor) { onNavigate(Screen.Recovery.route) }
-            BottomButton(Icons.Default.CleaningServices, "Cleaner", currentRoute == Screen.Cleaner.route, currentTheme.accentColor) { onNavigate(Screen.Cleaner.route) }
-            BottomButton(Icons.Default.Build, "Tools", currentRoute == Screen.Tools.route, currentTheme.accentColor) { onNavigate(Screen.Tools.route) }
+            BottomButton(Icons.Default.Home, "Home", currentRoute == Screen.Dashboard.route) { onNavigate(Screen.Dashboard.route) }
+            BottomButton(Icons.Default.Backup, "Backup", currentRoute == Screen.Backup.route) { onNavigate(Screen.Backup.route) }
+            BottomButton(Icons.Default.SettingsBackupRestore, "Restore", currentRoute == Screen.Restore.route) { onNavigate(Screen.Restore.route) }
+            BottomButton(Icons.Default.History, "Recover", currentRoute == Screen.Recovery.route) { onNavigate(Screen.Recovery.route) }
         }
     }
 }
 
 @Composable
-fun BottomButton(icon: ImageVector, label: String, isActive: Boolean, accentColor: Color, onClick: () -> Unit) {
+fun BottomButton(icon: ImageVector, label: String, isActive: Boolean, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
             .clickable { onClick() }
-            .padding(12.dp),
+            .padding(vertical = 8.dp, horizontal = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .size(width = 48.dp, height = 28.dp)
-                .background(if (isActive) accentColor.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(14.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = if (isActive) accentColor else Color.White,
-                modifier = Modifier.size(24.dp)
-            )
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = if (isActive) NeonBlue else Color.White.copy(alpha = 0.6f),
+            modifier = Modifier.size(24.dp)
+        )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = label, 
-            color = if (isActive) accentColor else Color.White,
+            color = if (isActive) NeonBlue else Color.White.copy(alpha = 0.6f),
             fontSize = 10.sp,
             fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
         )

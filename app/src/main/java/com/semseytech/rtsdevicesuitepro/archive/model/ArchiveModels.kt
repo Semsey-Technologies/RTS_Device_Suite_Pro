@@ -2,17 +2,22 @@ package com.semseytech.rtsdevicesuitepro.archive.model
 
 import java.io.File
 
-enum class ArchiveFormat(val extension: String) {
-    ZIP("zip"),
-    SEVEN_Z("7z"),
-    TAR("tar"),
-    GZIP("gz"),
-    BZIP2("bz2"),
-    XZ("xz")
+enum class ArchiveFormat(val extension: String, val displayName: String) {
+    ZIP(".zip", "ZIP"),
+    SEVEN_Z(".7z", "7z"),
+    TAR(".tar", "TAR"),
+    TAR_GZ(".tar.gz", "TAR.GZ"),
+    TAR_BZ2(".tar.bz2", "TAR.BZ2"),
+    TAR_XZ(".tar.xz", "TAR.XZ")
 }
 
-enum class CompressionLevel {
-    STORE, FASTEST, FAST, NORMAL, MAXIMUM, ULTRA
+enum class CompressionLevel(val level: Int) {
+    STORE(0), 
+    FASTEST(1), 
+    FAST(3), 
+    NORMAL(5), 
+    MAXIMUM(7), 
+    ULTRA(9)
 }
 
 enum class CompressionMethod {
@@ -31,6 +36,8 @@ data class ArchiveOptions(
     val format: ArchiveFormat = ArchiveFormat.ZIP,
     val level: CompressionLevel = CompressionLevel.NORMAL,
     val method: CompressionMethod = CompressionMethod.DEFLATE,
+    val outputFileName: String = "backup_${System.currentTimeMillis()}",
+    val outputDestination: String = "Internal", // Internal, SD Card, USB OTG, Cloud
     val dictionarySize: Int = 16, // MB
     val wordSize: Int = 32,
     val solidBlockSize: Long = 0, // 0 for None, -1 for Solid

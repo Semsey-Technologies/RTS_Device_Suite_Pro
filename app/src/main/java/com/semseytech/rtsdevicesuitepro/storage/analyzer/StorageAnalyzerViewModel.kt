@@ -8,7 +8,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class StorageAnalyzerViewModel(private val repository: StorageAnalyzerRepository) : ViewModel() {
+import androidx.lifecycle.AndroidViewModel
+import android.app.Application
+import com.semseytech.rtsdevicesuitepro.ui.components.*
+
+class StorageAnalyzerViewModel(application: Application, private val repository: StorageAnalyzerRepository) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(StorageStats())
     val uiState: StateFlow<StorageStats> = _uiState.asStateFlow()
@@ -19,36 +23,36 @@ class StorageAnalyzerViewModel(private val repository: StorageAnalyzerRepository
     private val _isSelectionMode = MutableStateFlow(false)
     val isSelectionMode: StateFlow<Boolean> = _isSelectionMode.asStateFlow()
 
-    private val _displaySettingsMap = MutableStateFlow<Map<String, DisplaySettings>>(
-        mapOf("DASHBOARD" to DisplaySettings())
+    private val _displaySettingsMap = MutableStateFlow<Map<String, FileDisplaySettings>>(
+        mapOf("DASHBOARD" to FileDisplaySettings())
     )
-    val displaySettingsMap: StateFlow<Map<String, DisplaySettings>> = _displaySettingsMap.asStateFlow()
+    val displaySettingsMap: StateFlow<Map<String, FileDisplaySettings>> = _displaySettingsMap.asStateFlow()
 
-    fun getSettingsForScope(scope: String): DisplaySettings {
-        return _displaySettingsMap.value[scope] ?: DisplaySettings()
+    fun getSettingsForScope(scope: String): FileDisplaySettings {
+        return _displaySettingsMap.value[scope] ?: FileDisplaySettings()
     }
 
-    fun updateSettingsForScope(scope: String, update: (DisplaySettings) -> DisplaySettings) {
+    fun updateSettingsForScope(scope: String, update: (FileDisplaySettings) -> FileDisplaySettings) {
         _displaySettingsMap.update { current ->
-            val existing = current[scope] ?: DisplaySettings()
+            val existing = current[scope] ?: FileDisplaySettings()
             current + (scope to update(existing))
         }
     }
 
     // Legacy setters for compatibility during transition, can be removed after UI update
-    fun setSortOption(option: SortOption, scope: String = "DASHBOARD") {
+    fun setSortOption(option: FileSortOption, scope: String = "DASHBOARD") {
         updateSettingsForScope(scope) { it.copy(sortOption = option) }
     }
 
-    fun setSortOrder(order: SortOrder, scope: String = "DASHBOARD") {
+    fun setSortOrder(order: FileSortOrder, scope: String = "DASHBOARD") {
         updateSettingsForScope(scope) { it.copy(sortOrder = order) }
     }
 
-    fun setViewMode(mode: ViewMode, scope: String = "DASHBOARD") {
+    fun setViewMode(mode: FileViewMode, scope: String = "DASHBOARD") {
         updateSettingsForScope(scope) { it.copy(viewMode = mode) }
     }
 
-    fun setGroupBy(option: GroupByOption, scope: String = "DASHBOARD") {
+    fun setGroupBy(option: FileGroupByOption, scope: String = "DASHBOARD") {
         updateSettingsForScope(scope) { it.copy(groupBy = option) }
     }
 
@@ -167,30 +171,31 @@ class StorageAnalyzerViewModel(private val repository: StorageAnalyzerRepository
         return sortFiles(files, settings.sortOption, settings.sortOrder)
     }
 
-    fun sortFiles(files: List<FileInfo>, option: SortOption, order: SortOrder): List<FileInfo> {
+    fun sortFiles(files: List<FileInfo>, option: FileSortOption, order: FileSortOrder): List<FileInfo> {
         val comparator = when (option) {
-            SortOption.NAME -> compareBy<FileInfo> { it.name.lowercase() }
-            SortOption.SIZE -> compareBy<FileInfo> { it.size }
-            SortOption.DATE_MODIFIED -> compareBy<FileInfo> { it.lastModified }
-            SortOption.DATE_CREATED -> compareBy<FileInfo> { it.lastModified } // Metadata not always available, falling back to lastModified
-            SortOption.TYPE -> compareBy<FileInfo> { it.path.substringAfterLast('.', "").lowercase() }
-            SortOption.AUTHORS -> compareBy<FileInfo> { "" } // Mock placeholder
-            SortOption.CATEGORIES -> compareBy<FileInfo> { it.category.name }
-            SortOption.TAGS -> compareBy<FileInfo> { "" } // Mock placeholder
-            SortOption.TITLE -> compareBy<FileInfo> { it.name }
+            FileSortOption.NAME -> compareBy<FileInfo> { it.name.lowercase() }
+            FileSortOption.SIZE -> compareBy<FileInfo> { it.size }
+            FileSortOption.DATE_MODIFIED -> compareBy<FileInfo> { it.lastModified }
+            FileSortOption.DATE_CREATED -> compareBy<FileInfo> { it.lastModified } // Metadata not always available, falling back to lastModified
+            FileSortOption.TYPE -> compareBy<FileInfo> { it.path.substringAfterLast('.', "").lowercase() }
+            FileSortOption.AUTHORS -> compareBy<FileInfo> { "" } 
+            FileSortOption.CATEGORIES -> compareBy<FileInfo> { it.category.name }
+            FileSortOption.TAGS -> compareBy<FileInfo> { "" }
+            FileSortOption.TITLE -> compareBy<FileInfo> { it.name }
+            else -> compareBy<FileInfo> { it.size }
         }
         
-        return if (order == SortOrder.ASCENDING) {
+        return if (order == FileSortOrder.ASCENDING) {
             files.sortedWith(comparator)
         } else {
             files.sortedWith(comparator.reversed())
         }
     }
 
-    fun groupFiles(files: List<FileInfo>, option: GroupByOption): Map<String, List<FileInfo>> {
+    fun groupFiles(files: List<FileInfo>, option: FileGroupByOption): Map<String, List<FileInfo>> {
         return when (option) {
-            GroupByOption.NONE -> mapOf("" to files)
-            GroupByOption.NAME -> files.groupBy { file ->
+            FileGroupByOption.NONE -> mapOf("" to files)
+            FileGroupByOption.NAME -> files.groupBy { file ->
                 val firstChar = file.name.firstOrNull()?.uppercaseChar() ?: '?'
                 when (firstChar) {
                     in 'A'..'E' -> "A - E"
@@ -201,18 +206,18 @@ class StorageAnalyzerViewModel(private val repository: StorageAnalyzerRepository
                     else -> "Others"
                 }
             }
-            GroupByOption.DATE_MODIFIED -> files.groupBy {
+            FileGroupByOption.DATE_MODIFIED -> files.groupBy {
                 java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(it.lastModified))
             }
-            GroupByOption.DATE_CREATED -> files.groupBy {
+            FileGroupByOption.DATE_CREATED -> files.groupBy {
                 java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(it.lastModified))
             }
-            GroupByOption.FOLDER -> files.groupBy { it.path.substringBeforeLast('/', "Root") }
-            GroupByOption.TYPE -> files.groupBy { it.path.substringAfterLast('.', "Unknown").uppercase() }
-            GroupByOption.AUTHOR -> files.groupBy { "Unknown Author" }
-            GroupByOption.TAG -> files.groupBy { "No Tags" }
-            GroupByOption.CATEGORY -> files.groupBy { it.category.name }
-            GroupByOption.SIZE -> files.groupBy { file ->
+            FileGroupByOption.FOLDER -> files.groupBy { it.path.substringBeforeLast('/', "Root") }
+            FileGroupByOption.TYPE -> files.groupBy { it.path.substringAfterLast('.', "Unknown").uppercase() }
+            FileGroupByOption.AUTHOR -> files.groupBy { "Unknown Author" }
+            FileGroupByOption.TAG -> files.groupBy { "No Tags" }
+            FileGroupByOption.CATEGORY -> files.groupBy { it.category.name }
+            FileGroupByOption.SIZE -> files.groupBy { file ->
                 val mb = file.size / (1024 * 1024)
                 when {
                     mb < 1 -> "Under 1 MB"
@@ -223,6 +228,7 @@ class StorageAnalyzerViewModel(private val repository: StorageAnalyzerRepository
                     else -> "Over 10 GB"
                 }
             }
+            else -> mapOf("" to files)
         }
     }
 }

@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.semseytech.rtsdevicesuitepro.ui.components.FileViewMode
 import android.util.Size as AndroidSize
 
 data class GridItemSizes(
@@ -31,7 +32,7 @@ data class GridItemSizes(
 @Composable
 fun FileGridItem(
     file: FileInfo,
-    viewMode: ViewMode = ViewMode.GRID_MEDIUM,
+    viewMode: FileViewMode = FileViewMode.GRID_MEDIUM,
     isSelected: Boolean,
     isSelectionMode: Boolean,
     onToggleSelection: () -> Unit,
@@ -42,13 +43,13 @@ fun FileGridItem(
     
     val sizes = remember(viewMode) {
         when (viewMode) {
-            ViewMode.GRID_SMALL -> GridItemSizes(
+            FileViewMode.GRID_SMALL -> GridItemSizes(
                 boxSize = 44.dp,
                 iconSize = 32.dp,
                 fontSizeTitle = 9.sp,
                 fontSizeSub = 8.sp
             )
-            ViewMode.GRID_LARGE -> GridItemSizes(
+            FileViewMode.GRID_LARGE -> GridItemSizes(
                 boxSize = 100.dp,
                 iconSize = 80.dp,
                 fontSizeTitle = 14.sp,

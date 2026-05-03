@@ -2,6 +2,8 @@ package com.semseytech.rtsdevicesuitepro.storage.analyzer
 
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.semseytech.rtsdevicesuitepro.ui.components.FileDisplaySettings
+import com.semseytech.rtsdevicesuitepro.ui.theme.LocalTheme
 
 @Composable
 fun CategoryViewerScreen(
@@ -12,9 +14,10 @@ fun CategoryViewerScreen(
     val uiState by viewModel.uiState.collectAsState()
     val isSelectionMode by viewModel.isSelectionMode.collectAsState()
     val selectedFiles by viewModel.selectedFiles.collectAsState()
+    val theme = LocalTheme.current
     
     val displaySettingsMap by viewModel.displaySettingsMap.collectAsState()
-    val settings = displaySettingsMap[category.name] ?: DisplaySettings()
+    val settings = displaySettingsMap[category.name] ?: FileDisplaySettings()
     
     val sortOption = settings.sortOption
     val sortOrder = settings.sortOrder
@@ -37,7 +40,7 @@ fun CategoryViewerScreen(
     }
 
     Scaffold(
-        containerColor = DeepDark,
+        containerColor = theme.startColor,
         topBar = {
             CategoryViewerTopBar(
                 category = category,
@@ -49,17 +52,11 @@ fun CategoryViewerScreen(
                 onViewMenuToggle = { showViewMenu = it },
                 showGroupMenu = showGroupMenu,
                 onGroupMenuToggle = { showGroupMenu = it },
-                viewMode = viewMode,
-                sortOption = sortOption,
-                sortOrder = sortOrder,
-                onSortOptionSelected = { viewModel.setSortOption(it, category.name) },
-                onSortOrderSelected = { viewModel.setSortOrder(it, category.name) },
-                onViewModeSelected = { viewModel.setViewMode(it, category.name) },
-                onGroupBySelected = { viewModel.setGroupBy(it, category.name) },
+                displaySettings = settings,
+                onSettingsChanged = { viewModel.updateSettingsForScope(category.name) { _ -> it } },
                 onSelectAll = { viewModel.selectAll(files) },
                 onDeselectAll = { viewModel.deselectAll() },
-                onMoveSelected = { dialogState.showMultiMoveCopyDialog = true },
-                onCopySelected = { dialogState.showMultiMoveCopyDialog = false },
+                onExitSelection = { viewModel.exitSelectionMode() },
                 onBack = onBack
             )
         },

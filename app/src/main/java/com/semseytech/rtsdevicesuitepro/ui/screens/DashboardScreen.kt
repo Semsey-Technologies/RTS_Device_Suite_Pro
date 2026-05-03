@@ -5,47 +5,29 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.FactCheck
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.*
+import com.semseytech.rtsdevicesuitepro.ui.theme.ThemePreset
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.semseytech.rtsdevicesuitepro.navigation.Screen
 import com.semseytech.rtsdevicesuitepro.ui.theme.LocalTheme
-import com.semseytech.rtsdevicesuitepro.ui.theme.ThemeManager
-
-// Mockup Accurate Colors
-val NeonBlue = Color(0xFF00BFFF)
-val NeonGreen = Color(0xFF00FF99)
-val AppBackground = Color(0xFF0A0F1A)
-val SecondaryBackground = Color(0xFF0D1422)
-val CardBackground = Color(0xFF111A2C)
-val CardElevated = Color(0xFF162033)
-val LightGray = Color(0xFF94A3B8)
 
 @Composable
 fun DashboardScreen(
@@ -53,120 +35,187 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val currentTheme = LocalTheme.current
-    val scale = ThemeManager.uiScale
+    val scrollState = rememberScrollState()
+    val theme = LocalTheme.current
+    
+    val infiniteTransition = rememberInfiniteTransition(label = "cog_rotation")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(10000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        currentTheme.startColor,
-                        currentTheme.endColor
-                    ),
-                    start = Offset(0f, 0f),
-                    end = Offset(Float.POSITIVE_INFINITY, 0f) // 90 degrees (Horizontal)
+                Brush.verticalGradient(
+                    colors = listOf(theme.startColor, theme.endColor)
                 )
             )
-            .drawBehind {
-                val gridSize = (40.dp * scale).toPx()
-                // Horizontal Grid
-                for (y in 0..size.height.toInt() step gridSize.toInt()) {
-                    drawLine(
-                        color = currentTheme.accentColor.copy(alpha = 0.1f),
-                        start = Offset(0f, y.toFloat()),
-                        end = Offset(size.width, y.toFloat()),
-                        strokeWidth = 1f
-                    )
-                }
-                // Vertical Grid
-                for (x in 0..size.width.toInt() step gridSize.toInt()) {
-                    drawLine(
-                        color = currentTheme.accentColor.copy(alpha = 0.1f),
-                        start = Offset(x.toFloat(), 0f),
-                        end = Offset(x.toFloat(), size.height),
-                        strokeWidth = 1f
-                    )
-                }
-            }
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Main Content Area
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                BannerHeader(currentTheme.name)
+        // Background Cog Wheel
+        Icon(
+            imageVector = Icons.Default.Settings,
+            contentDescription = null,
+            modifier = Modifier
+                .size(300.dp)
+                .align(Alignment.BottomEnd)
+                .offset(x = 100.dp, y = 100.dp)
+                .graphicsLayer(rotationZ = rotation)
+                .alpha(0.05f),
+            tint = theme.accentColor
+        )
 
-                Column(modifier = Modifier.padding(horizontal = (16.dp * scale))) {
-                    SystemStatusDivider()
-                    StorageStatusCard(uiState, onNavigate)
-
-                    Spacer(modifier = Modifier.height(24.dp * scale))
-
-                    // 1. SYSTEM MODULES SECTION
-                    SectionHeaderLabel("SYSTEM MODULES", currentTheme.accentColor)
-                    SystemModulesGrid(onNavigate, currentTheme.accentColor)
-
-                    Spacer(modifier = Modifier.height(24.dp * scale))
-
-                    // 2. QUICK ACTIONS SECTION
-                    SectionHeaderLabel("QUICK ACTIONS", currentTheme.accentColor)
-                    QuickActionsRow(onNavigate, currentTheme.accentColor)
-
-                    Spacer(modifier = Modifier.height(24.dp * scale))
-
-                    // 3. TOOLS / EXTRA MODULES SECTION
-                    SectionHeaderLabel("TOOLS", currentTheme.accentColor)
-                    ToolsGrid(onNavigate, currentTheme.accentColor)
-
-                    Spacer(modifier = Modifier.height(24.dp * scale))
-                    
-                    AutoTasksCard(uiState, currentTheme.accentColor)
-                    Spacer(modifier = Modifier.height(12.dp * scale))
-                    SmartOrganizerCard(currentTheme.accentColor)
-                    Spacer(modifier = Modifier.height(24.dp * scale))
-                }
-            }
-
-            // Bottom Navigation Bar is now handled in MainActivity's Scaffold
-        }
-    }
-}
-
-@Composable
-fun SystemModulesGrid(onNavigate: (String) -> Unit, accentColor: Color) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, accentColor.copy(alpha = 0.1f), RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground.copy(alpha = 0.6f))
-    ) {
+        // Main Content Area
         Column(
-            modifier = Modifier.padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(16.dp)
         ) {
-            val modules = listOf(
-                ModuleItem(Screen.ViewBackups, Icons.Outlined.Public, "View Backups", accentColor),
-                ModuleItem(Screen.Recovery, Icons.Outlined.History, "Restore Data", accentColor),
-                ModuleItem(Screen.Recovery, Icons.Outlined.ManageSearch, "Deep Recovery", accentColor),
-                ModuleItem(Screen.Cleaner, Icons.Outlined.Brush, "File Cleaner", accentColor),
-                ModuleItem(Screen.Archive, Icons.Outlined.CloudSync, "NAS / SMB Sync", accentColor),
-                ModuleItem(Screen.StorageAnalyzer, Icons.Outlined.BarChart, "Storage Analyzer", accentColor),
-                ModuleItem(Screen.Network, Icons.Outlined.SignalCellularAlt, "Net Optimizer", accentColor)
+            // Active Alerts
+            uiState.activeAlerts.forEach { alert ->
+                AlertCard(alert, theme) { viewModel.dismissAlert(alert.id) }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            SystemStatusSection(uiState, onNavigate)
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            MaintenanceSection(uiState) { viewModel.completeMaintenanceTask(it) }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            NetworkAnalyzerSection(
+                uiState = uiState,
+                onNavigate = onNavigate,
+                onRunDiagnostic = { viewModel.runNetworkDiagnostic() },
+                onExportLog = { viewModel.exportDiagnosticLog() }
             )
 
-            modules.chunked(4).forEach { row ->
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    row.forEach { item ->
-                        CompactModuleTile(item) { onNavigate(item.screen.route) }
-                    }
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            QuickAccessSection(onNavigate, uiState)
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            AutoTasksSection(
+                uiState = uiState,
+                onDailyBackupToggle = { viewModel.toggleDailyBackup(it) },
+                onAutoCleanToggle = { viewModel.toggleAutoClean(it) }
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+fun SystemStatusSection(uiState: DashboardUiState, onNavigate: (String) -> Unit) {
+    val theme = LocalTheme.current
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SectionHeader("System Status")
+            HealthBadge(uiState.healthScore, uiState.healthStatus)
+        }
+        
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.2f))
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Device Info Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.PhoneAndroid, null, tint = theme.accentColor, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "${uiState.deviceInfo.manufacturer} ${uiState.deviceInfo.model} • Android ${uiState.deviceInfo.androidVersion}",
+                        color = theme.textColor.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.labelSmall
+                    )
                 }
-                if (modules.indexOf(row.last()) < modules.size - 1) {
-                   Spacer(modifier = Modifier.height(16.dp))
+                
+                if (uiState.modelSpec.notes.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        uiState.modelSpec.notes,
+                        color = theme.accentColor.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Start,
+                        fontSize = 10.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    StatusGauge(
+                        label = "Storage",
+                        value = (uiState.storageUsedPercent * 100).toInt(),
+                        subValue = "${uiState.storageFreeSpace} Free",
+                        color = Color(0xFF00BFFF), // Blue
+                        onClick = { onNavigate(Screen.StorageAnalyzer.route) }
+                    )
+                    StatusGauge(
+                        label = "Battery",
+                        value = (uiState.batteryLevel * 100).toInt(),
+                        color = Color(0xFF00FF99), // Green
+                        onClick = { onNavigate(Screen.BatteryEstimation.route) }
+                    )
+                    StatusGauge(
+                        label = "CPU Temp",
+                        value = (uiState.cpuTemp * 100).toInt(),
+                        unit = "°C",
+                        color = Color(0xFFFF8C00), // Orange
+                        onClick = { onNavigate(Screen.ResourceMonitor.route) }
+                    )
+                    StatusGauge(
+                        label = "Uptime",
+                        valueString = formatUptime(uiState.uptimeSeconds),
+                        progress = 1.0f,
+                        color = Color(0xFF00FFFF), // Cyan
+                        onClick = { onNavigate(Screen.ResourceMonitor.route) }
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Last Backup: ${uiState.lastBackupDate}",
+                        color = theme.textColor.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    Text(
+                        "Last Sync: ${uiState.lastSyncDate}",
+                        color = theme.textColor.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.labelSmall
+                    )
                 }
             }
         }
@@ -174,289 +223,467 @@ fun SystemModulesGrid(onNavigate: (String) -> Unit, accentColor: Color) {
 }
 
 @Composable
-fun ToolsGrid(onNavigate: (String) -> Unit, accentColor: Color) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = SecondaryBackground.copy(alpha = 0.4f))
+fun StatusGauge(
+    label: String,
+    value: Int? = null,
+    valueString: String? = null,
+    progress: Float? = null,
+    unit: String = "%",
+    subValue: String? = null,
+    color: Color,
+    onClick: () -> Unit
+) {
+    val displayProgress = progress ?: (value?.toFloat()?.div(100f) ?: 0f)
+    val animatedProgress by animateFloatAsState(
+        targetValue = displayProgress,
+        animationSpec = tween(1000, easing = FastOutSlowInEasing),
+        label = "gaugeProgress"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable { onClick() }
     ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(70.dp)) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokeWidth = 6.dp.toPx()
+                drawArc(
+                    color = color.copy(alpha = 0.15f),
+                    startAngle = 0f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+                drawArc(
+                    color = color,
+                    startAngle = -90f,
+                    sweepAngle = 360f * animatedProgress,
+                    useCenter = false,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = valueString ?: "$value$unit",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (valueString != null) 10.sp else 14.sp,
+                    textAlign = TextAlign.Center
+                )
+                if (subValue != null) {
+                    Text(
+                        text = subValue,
+                        color = color.copy(alpha = 0.8f),
+                        fontSize = 9.sp
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(label, color = Color.White, fontSize = 11.sp)
+    }
+}
+
+@Composable
+fun NetworkAnalyzerSection(
+    uiState: DashboardUiState,
+    onNavigate: (String) -> Unit,
+    onRunDiagnostic: () -> Unit,
+    onExportLog: () -> Unit
+) {
+    val theme = LocalTheme.current
+    Column {
         Row(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            modifier = Modifier.fillMaxWidth().clickable { onNavigate(Screen.Network.route) },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            CompactModuleTile(ModuleItem(Screen.PreReset, Icons.AutoMirrored.Outlined.FactCheck, "Pre-Reset", accentColor)) { onNavigate(Screen.PreReset.route) }
-            CompactModuleTile(ModuleItem(Screen.Automation, Icons.Outlined.Schedule, "Snapshots", accentColor)) { onNavigate(Screen.Automation.route) }
-            CompactModuleTile(ModuleItem(Screen.Config, Icons.Outlined.Settings, "Config", Color.Gray)) { onNavigate(Screen.Config.route) }
+            SectionHeader("Network Analyzer")
+            Icon(Icons.Default.ChevronRight, null, tint = theme.accentColor)
+        }
+        
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.2f))
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                DiagnosticButton(
+                    isRunning = uiState.isDiagnosticRunning,
+                    onClick = onRunDiagnostic
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                NetworkGrid(uiState.networkDiagnostics)
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                OutlinedButton(
+                    onClick = onExportLog,
+                    modifier = Modifier.fillMaxWidth(0.5f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.3f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                ) {
+                    Text("Export Log")
+                }
+            }
         }
     }
 }
 
 @Composable
-fun CompactModuleTile(item: ModuleItem, onClick: () -> Unit) {
-    val scale = ThemeManager.uiScale
-    Column(
+fun DiagnosticButton(isRunning: Boolean, onClick: () -> Unit) {
+    val theme = LocalTheme.current
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (isRunning) 1.05f else 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = LinearOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseScale"
+    )
+
+    Button(
+        onClick = onClick,
         modifier = Modifier
-            .width(75.dp * scale)
-            .clickable { onClick() },
-        horizontalAlignment = Alignment.CenterHorizontally
+            .fillMaxWidth(0.6f)
+            .scale(pulseScale),
+        colors = ButtonDefaults.buttonColors(containerColor = theme.accentColor.copy(alpha = 0.8f)),
+        shape = RoundedCornerShape(8.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(45.dp * scale)
-                .background(SecondaryBackground, RoundedCornerShape(8.dp))
-                .border(1.dp, item.accentColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(item.icon, null, tint = item.accentColor, modifier = Modifier.size(22.dp * scale))
+        Text(if (isRunning) "Scanning..." else "Run Diagnostic", color = Color.White)
+    }
+}
+
+@Composable
+fun NetworkGrid(diag: NetworkDiagnostics) {
+    val theme = LocalTheme.current
+    val borderColor = theme.accentColor.copy(alpha = 0.1f)
+    Column {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            NetworkItem("Local IP", diag.localIp, Modifier.weight(1f))
+            VerticalDivider(modifier = Modifier.height(40.dp), color = borderColor)
+            NetworkItem("External IP", diag.externalIp, Modifier.weight(1f))
+            VerticalDivider(modifier = Modifier.height(40.dp), color = borderColor)
+            NetworkItem("Ping", diag.ping, Modifier.weight(1f))
         }
-        Spacer(modifier = Modifier.height(6.dp * scale))
+        HorizontalDivider(color = borderColor, modifier = Modifier.padding(vertical = 8.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            NetworkItem("Download", diag.download, Modifier.weight(1f), highlightColor = Color(0xFF00BFFF))
+            VerticalDivider(modifier = Modifier.height(40.dp), color = borderColor)
+            NetworkItem("Upload", diag.upload, Modifier.weight(1f))
+            VerticalDivider(modifier = Modifier.height(40.dp), color = borderColor)
+            NetworkItem("Wi-Fi Signal", diag.wifiSignal, Modifier.weight(1f), highlightColor = Color(0xFF00FF99))
+        }
+        HorizontalDivider(color = borderColor, modifier = Modifier.padding(vertical = 8.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            NetworkItem("Packet Loss", diag.packetLoss, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+fun NetworkItem(label: String, value: String, modifier: Modifier = Modifier, highlightColor: Color? = null) {
+    val theme = LocalTheme.current
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, color = theme.textColor.copy(alpha = 0.5f), fontSize = 10.sp)
         Text(
-            item.displayName, 
-            color = Color.White, 
-            style = MaterialTheme.typography.labelSmall,
-            textAlign = TextAlign.Center, 
-            lineHeight = 10.sp * scale
+            value, 
+            color = highlightColor ?: Color.White, 
+            fontSize = 12.sp, 
+            fontWeight = FontWeight.Bold
         )
     }
 }
 
 @Composable
-fun QuickActionsRow(onNavigate: (String) -> Unit, accentColor: Color) {
-    val scale = ThemeManager.uiScale
+fun QuickAccessSection(onNavigate: (String) -> Unit, uiState: DashboardUiState) {
+    Column {
+        SectionHeader("Quick Access")
+        
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            QuickAccessTile("Auto Organizer", Icons.Default.Folder, "", Modifier.weight(1f)) { onNavigate(Screen.SmartOrganizer.route) }
+            QuickAccessTile("Archive Manager", Icons.Default.Archive, "", Modifier.weight(1f)) { onNavigate(Screen.Archive.route) }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            QuickAccessTile(
+                label = "Cleaner", 
+                icon = Icons.Default.CleaningServices, 
+                status = if (uiState.isAutoCleanEnabled) "Auto Active" else "Manual", 
+                modifier = Modifier.weight(1f)
+            ) { onNavigate(Screen.Cleaner.route) }
+            QuickAccessTile("File Explorer", Icons.Default.FolderOpen, "", Modifier.weight(1f)) { onNavigate(Screen.FileExplorer.route) }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            QuickAccessTile("System Tools", Icons.Default.Build, "Utilities", Modifier.weight(1f)) { onNavigate(Screen.Tools.route) }
+            QuickAccessTile("Automation", Icons.Default.AutoFixHigh, "Rules", Modifier.weight(1f)) { onNavigate(Screen.Automation.route) }
+        }
+    }
+}
+
+@Composable
+fun QuickAccessTile(
+    label: String,
+    icon: ImageVector,
+    status: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val theme = LocalTheme.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val glowAlpha by animateFloatAsState(if (isPressed) 0.6f else 0f)
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(90.dp * scale)
-            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground)
+        modifier = modifier
+            .height(100.dp)
+            .clickable(interactionSource = interactionSource, indication = null) { onClick() }
+            .drawBehind {
+                if (glowAlpha > 0f) {
+                    drawRoundRect(
+                        color = theme.accentColor.copy(alpha = glowAlpha),
+                        size = size,
+                        cornerRadius = CornerRadius(16.dp.toPx()),
+                        style = Stroke(width = 4.dp.toPx())
+                    )
+                }
+            },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.3f)),
+        border = BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.1f))
     ) {
-        Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.fillMaxSize().padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            QuickOrb("Deep Recovery Scan", Icons.Default.History, accentColor) { onNavigate(Screen.Recovery.route) }
-            QuickOrb("Unused Apps", Icons.Default.Apps, accentColor) { onNavigate(Screen.Cleaner.route) }
-            QuickOrb("Extract Archives", Icons.Default.FolderZip, accentColor) { onNavigate(Screen.Archive.route) }
+            Icon(icon, null, tint = theme.accentColor, modifier = Modifier.size(32.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            if (status.isNotEmpty()) {
+                Text(status, color = theme.accentColor, fontSize = 10.sp)
+            }
         }
     }
 }
 
 @Composable
-fun QuickOrb(label: String, icon: ImageVector, accentColor: Color, onClick: () -> Unit) {
-    val scale = ThemeManager.uiScale
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onClick() }) {
-        Box(
-            modifier = Modifier
-                .size(40.dp * scale)
-                .background(
-                    Brush.radialGradient(listOf(accentColor.copy(alpha = 0.3f), Color.Transparent)),
-                    CircleShape
-                )
-                .border(1.dp, accentColor.copy(alpha = 0.2f), CircleShape),
-            contentAlignment = Alignment.Center
+fun AutoTasksSection(
+    uiState: DashboardUiState,
+    onDailyBackupToggle: (Boolean) -> Unit,
+    onAutoCleanToggle: (Boolean) -> Unit
+) {
+    val theme = LocalTheme.current
+    Column {
+        SectionHeader("Auto Tasks")
+        
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.1f))
         ) {
-            Icon(icon, null, tint = accentColor, modifier = Modifier.size(20.dp * scale))
-        }
-        Text(label, color = LightGray, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp * scale))
-    }
-}
-
-@Composable
-fun AutoTasksCard(uiState: DashboardUiState, accentColor: Color) {
-    val scale = ThemeManager.uiScale
-    Card(
-        modifier = Modifier.fillMaxWidth().border(1.dp, accentColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground)
-    ) {
-        Column(modifier = Modifier.padding(12.dp * scale)) {
-            Text("Auto Tasks", color = accentColor, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp * scale), color = Color.White.copy(alpha = 0.1f))
-            ToggleRow("Daily Backup", true, accentColor)
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp * scale), color = Color.White.copy(alpha = 0.1f))
-            ToggleRow("Auto Clean", uiState.isAutoCleanEnabled, accentColor)
+            Column(modifier = Modifier.padding(16.dp)) {
+                ToggleRow("Daily Backup", uiState.isDailyBackupEnabled, onDailyBackupToggle)
+                HorizontalDivider(color = theme.accentColor.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 8.dp))
+                Column {
+                    ToggleRow("Auto Clean", uiState.isAutoCleanEnabled, onAutoCleanToggle)
+                    if (uiState.isAutoCleanEnabled) {
+                        Text(
+                            text = uiState.autoCleanSummary,
+                            color = theme.accentColor.copy(alpha = 0.7f),
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-fun ToggleRow(label: String, checked: Boolean, accentColor: Color) {
-    val scale = ThemeManager.uiScale
+fun ToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    val theme = LocalTheme.current
     Row(
-        modifier = Modifier.fillMaxWidth().height(40.dp * scale),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+        Text(label, color = Color.White, fontSize = 14.sp)
         Switch(
-            checked = checked, 
-            onCheckedChange = {}, 
+            checked = checked,
+            onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = accentColor, 
-                checkedTrackColor = accentColor.copy(alpha = 0.3f),
+                checkedThumbColor = theme.accentColor,
+                checkedTrackColor = theme.accentColor.copy(alpha = 0.4f),
+                uncheckedThumbColor = Color.Gray,
                 uncheckedTrackColor = Color.Gray.copy(alpha = 0.2f)
-            ),
-            modifier = Modifier.scale(scale.coerceIn(0.8f, 1.5f))
+            )
         )
     }
 }
 
 @Composable
-fun SmartOrganizerCard(accentColor: Color) {
-    val scale = ThemeManager.uiScale
-    Card(
-        modifier = Modifier.fillMaxWidth().border(1.dp, accentColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground)
-    ) {
-        Column(modifier = Modifier.padding(12.dp * scale)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Smart File Organizer", color = accentColor, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Button(
-                    onClick = {},
-                    colors = ButtonDefaults.buttonColors(containerColor = CardElevated),
-                    shape = RoundedCornerShape(6.dp),
-                    modifier = Modifier.height(30.dp * scale)
-                ) {
-                    Text("Manage", color = Color.White, style = MaterialTheme.typography.labelSmall)
-                }
-            }
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp * scale), color = Color.White.copy(alpha = 0.1f))
-            Text("Downloads Sorted | NAS Sync Active", color = LightGray, style = MaterialTheme.typography.labelSmall)
-        }
-    }
-}
-
-@Composable
-fun SectionHeaderLabel(title: String, accentColor: Color) {
-    val scale = ThemeManager.uiScale
+fun SectionHeader(title: String) {
+    val theme = LocalTheme.current
     Text(
         text = title,
-        color = accentColor,
-        style = MaterialTheme.typography.labelSmall,
+        color = theme.accentColor,
+        style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(top = 16.dp * scale, bottom = 4.dp * scale),
-        letterSpacing = 1.sp
+        modifier = Modifier.padding(vertical = 8.dp)
     )
 }
 
 @Composable
-fun BannerHeader(themeName: String) {
-    val context = LocalContext.current
-    val bannerPath = remember(themeName) {
-        val extensions = listOf("png", "jpeg", "jpg", "webp")
-        var foundPath: String? = null
-        for (ext in extensions) {
-            val path = "banner/$themeName.$ext"
-            try {
-                context.assets.open(path).close()
-                foundPath = "file:///android_asset/$path"
-                break
-            } catch (e: Exception) {
-                // Continue searching
-            }
-        }
-        foundPath
+fun HealthBadge(score: Int, status: String) {
+    val color = when {
+        score >= 90 -> Color(0xFF00FF99)
+        score >= 75 -> Color(0xFFADFF2F)
+        score >= 50 -> Color(0xFFFFD700)
+        score >= 25 -> Color(0xFFFF8C00)
+        else -> Color(0xFFFF4500)
     }
-
-    if (bannerPath != null) {
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(bannerPath)
-                .crossfade(true)
-                .build(),
-            contentDescription = "Theme Banner",
-            modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp),
-            contentScale = ContentScale.FillWidth
-        )
-    } else {
-        // Fallback to default banner
-        Image(
-            painter = painterResource(id = com.semseytech.rtsdevicesuitepro.R.drawable.banner),
-            contentDescription = "Default Banner",
-            modifier = Modifier.fillMaxWidth(),
-            contentScale = ContentScale.FillWidth
-        )
-    }
-}
-
-@Composable
-fun SystemStatusDivider() {
-    val scale = ThemeManager.uiScale
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp * scale),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        HorizontalDivider(modifier = Modifier.weight(1f), color = Color.White.copy(alpha = 0.2f))
-        Text(
-            "System Status", 
-            color = Color.White, 
-            style = MaterialTheme.typography.bodyMedium, 
-            modifier = Modifier.padding(horizontal = 16.dp * scale),
-            fontWeight = FontWeight.Medium
-        )
-        HorizontalDivider(modifier = Modifier.weight(1f), color = Color.White.copy(alpha = 0.2f))
-    }
-}
-
-@Composable
-fun StorageStatusCard(uiState: DashboardUiState, onNavigate: (String) -> Unit) {
-    val currentTheme = LocalTheme.current
-    val scale = ThemeManager.uiScale
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(130.dp * scale)
-            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
+    
+    Surface(
+        color = color.copy(alpha = 0.2f),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBackground)
+        border = BorderStroke(1.dp, color.copy(alpha = 0.5f))
     ) {
         Row(
-            modifier = Modifier.fillMaxSize().padding(16.dp * scale),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(85.dp * scale)) {
-                CircularProgressIndicator(
-                    progress = { uiState.storageUsedPercent },
-                    modifier = Modifier.fillMaxSize(),
-                    strokeWidth = 10.dp * scale,
-                    color = currentTheme.accentColor,
-                    trackColor = Color.White.copy(alpha = 0.05f),
-                    strokeCap = StrokeCap.Butt
-                )
-                Text(
-                    "${(uiState.storageUsedPercent * 100).toInt()}%",
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
-                )
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(color, RoundedCornerShape(4.dp))
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                "$status ($score)",
+                color = color,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+fun AlertCard(alert: MaintenanceAlert, theme: ThemePreset, onDismiss: () -> Unit) {
+    val color = when (alert.severity) {
+        AlertSeverity.CRITICAL -> Color.Red
+        AlertSeverity.WARNING -> Color(0xFFFF8C00)
+        AlertSeverity.INFO -> theme.accentColor
+    }
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.15f)),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (alert.severity == AlertSeverity.CRITICAL) Icons.Default.Error else Icons.Default.Warning,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(alert.title, color = color, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(alert.message, color = theme.textColor.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
             }
-            Spacer(modifier = Modifier.width(20.dp * scale))
-            Column {
-                Text("93.4 GB Free / 256 GB", color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("Last Backup: Today, 10:15 AM", color = LightGray, style = MaterialTheme.typography.bodySmall)
-                Spacer(modifier = Modifier.height(12.dp * scale))
-                Button(
-                    onClick = { onNavigate(Screen.Backup.route) },
-                    colors = ButtonDefaults.buttonColors(containerColor = currentTheme.accentColor),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.height(34.dp * scale),
-                    contentPadding = PaddingValues(horizontal = 24.dp * scale, vertical = 0.dp)
-                ) {
-                    Text("Create Backup", color = Color.Black, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.Close, null, tint = theme.textColor.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun MaintenanceSection(uiState: DashboardUiState, onCompleteTask: (String) -> Unit) {
+    val theme = LocalTheme.current
+    Column {
+        SectionHeader("Physical Maintenance")
+        
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.1f))
+        ) {
+            Column(modifier = Modifier.padding(8.dp)) {
+                uiState.maintenanceTasks.forEach { task ->
+                    MaintenanceItem(task, theme, onCompleteTask)
                 }
             }
         }
     }
 }
 
-data class ModuleItem(val screen: Screen, val icon: ImageVector, val displayName: String, val accentColor: Color)
+@Composable
+fun MaintenanceItem(task: MaintenanceTask, theme: ThemePreset, onComplete: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            modifier = Modifier.size(32.dp),
+            color = if (task.isDue) Color.Red.copy(alpha = 0.2f) else Color.Green.copy(alpha = 0.1f),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Icon(
+                imageVector = if (task.isDue) Icons.Default.PriorityHigh else Icons.Default.Check,
+                contentDescription = null,
+                tint = if (task.isDue) Color.Red else Color.Green,
+                modifier = Modifier.padding(8.dp)
+            )
+        }
+        
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        Column(modifier = Modifier.weight(1f)) {
+            Text(task.title, color = theme.textColor, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(task.description, color = theme.textColor.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
+        }
+        
+        if (task.isDue) {
+            TextButton(onClick = { onComplete(task.id) }) {
+                Text("MARK DONE", color = theme.accentColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        } else {
+            Text(
+                "COMPLETED",
+                color = Color.Green.copy(alpha = 0.5f),
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 9.sp,
+                modifier = Modifier.padding(end = 8.dp)
+            )
+        }
+    }
+}
+
+fun formatUptime(seconds: Long): String {
+    val h = seconds / 3600
+    val m = (seconds % 3600) / 60
+    return "${h}h ${m}m"
+}

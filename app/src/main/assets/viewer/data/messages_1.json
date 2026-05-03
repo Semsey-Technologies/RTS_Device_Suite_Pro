@@ -1,0 +1,26 @@
+[
+  {
+    "type": "sent",
+    "body": "Hey, did you finish the report?",
+    "timestamp": 1714310000000
+  },
+  {
+    "type": "received",
+    "body": "Almost done! Just adding the final charts.",
+    "timestamp": 1714310500000
+  },
+  {
+    "type": "received",
+    "body": "Check this out.",
+    "timestamp": 1714310600000,
+    "mms": {
+      "type": "image",
+      "path": "data/mms/1/chart.jpg"
+    }
+  },
+  {
+    "type": "sent",
+    "body": "Looks great! See you soon!",
+    "timestamp": 1714320000000
+  }
+]

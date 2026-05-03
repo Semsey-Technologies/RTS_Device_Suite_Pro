@@ -3,11 +3,12 @@ package com.semseytech.rtsdevicesuitepro.storage.analyzer
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.semseytech.rtsdevicesuitepro.ui.components.FileViewMode
 
 @Composable
 fun CategoryViewerContent(
     padding: PaddingValues,
-    viewMode: ViewMode,
+    viewMode: FileViewMode,
     groupedFiles: Map<String, List<FileInfo>>,
     collapsedGroups: Map<String, Boolean>,
     selectedFiles: Set<String>,
@@ -20,7 +21,7 @@ fun CategoryViewerContent(
 ) {
     StorageAnalyzerBackground {
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-            if (viewMode == ViewMode.LIST) {
+            if (viewMode == FileViewMode.LIST) {
                 CategoryViewerListContent(
                     groupedFiles, collapsedGroups, selectedFiles, isSelectionMode,
                     filesEmpty, onToggleGroup, onToggleFileSelection, onEnterSelectionMode, onFileClick

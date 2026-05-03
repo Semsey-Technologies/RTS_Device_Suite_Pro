@@ -2,7 +2,8 @@ package com.semseytech.rtsdevicesuitepro.navigation
 
 sealed class Screen(val route: String, val title: String) {
     object Dashboard : Screen("dashboard", "Dashboard")
-    object Backup : Screen("backup", "Backup & Restore")
+    object Backup : Screen("backup", "Backup Suite")
+    object Restore : Screen("restore", "Restore Module")
     object Recovery : Screen("recovery", "Recovery Suite")
     object Cleaner : Screen("cleaner", "Cleaner & Maintenance")
     object Network : Screen("network", "Network & Optimization")
@@ -12,11 +13,24 @@ sealed class Screen(val route: String, val title: String) {
     object ViewBackups : Screen("view_backups", "View Backups")
     object Tools : Screen("tools", "Tools")
     object Automation : Screen("automation", "Automation Engine")
-    object Config : Screen("config", "System Configuration")
+    object FlowEditor : Screen("flow_editor", "Flow Editor")
+    object AutomationControls : Screen("automation_controls", "Automation Controls")
+    object Config : Screen("config?tab={tab}", "System Configuration") {
+        fun createRoute(tab: Int = 0) = "config?tab=$tab"
+    }
     object LogExporter : Screen("log_exporter", "Log Exporter")
     object ResourceMonitor : Screen("resource_monitor", "Resource Monitor")
     object SmartOrganizer : Screen("smart_organizer", "Smart Organizer")
     object StorageAnalyzer : Screen("storage_analyzer", "Storage Analyzer")
+    object FileExplorer : Screen("file_explorer", "File Explorer")
+    object FileList : Screen("file_list/{path}", "Files") {
+        fun createRoute(path: String) = "file_list/${java.net.URLEncoder.encode(path, "UTF-8")}"
+    }
+    object Terminal : Screen("terminal", "Command Terminal")
+    object BatteryEstimation : Screen("battery_estimation", "Battery Usage Estimator")
+    object HelpAndPermissions : Screen("help_permissions", "Help & Permissions")
+    object AdbSetup : Screen("adb_setup", "ADB Setup")
+    object AdbConsole : Screen("adb_console", "ADB Console")
     object CategoryViewer : Screen("category_viewer/{category}", "Category Viewer") {
         fun createRoute(category: String) = "category_viewer/$category"
     }

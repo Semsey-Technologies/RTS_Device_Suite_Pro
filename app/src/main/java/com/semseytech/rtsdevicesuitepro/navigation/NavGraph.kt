@@ -1,5 +1,6 @@
 package com.semseytech.rtsdevicesuitepro.navigation
 
+import android.app.Application
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
@@ -11,6 +12,7 @@ import com.semseytech.rtsdevicesuitepro.ui.screens.ThemeEngineScreen
 import com.semseytech.rtsdevicesuitepro.ui.screens.ConfigScreen
 import com.semseytech.rtsdevicesuitepro.ui.screens.ToolsScreen
 import com.semseytech.rtsdevicesuitepro.ui.screens.ResourceMonitorScreen
+import com.semseytech.rtsdevicesuitepro.ui.help.HelpAndPermissionsScreen
 import com.semseytech.rtsdevicesuitepro.viewer.ViewBackupsScreen
 import com.semseytech.rtsdevicesuitepro.organizer.ui.SmartOrganizerScreen
 import com.semseytech.rtsdevicesuitepro.organizer.ui.OrganizerViewModel
@@ -28,6 +30,8 @@ import com.semseytech.rtsdevicesuitepro.backup.ui.BackupScreen
 import com.semseytech.rtsdevicesuitepro.backup.BackupViewModel
 import com.semseytech.rtsdevicesuitepro.restore.ui.RestoreScreen
 import com.semseytech.rtsdevicesuitepro.restore.RestoreViewModel
+import com.semseytech.rtsdevicesuitepro.battery.ui.BatteryScreen
+import com.semseytech.rtsdevicesuitepro.battery.ui.BatteryViewModel
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.ViewModel
@@ -47,22 +51,54 @@ fun SetupNavGraph(navController: NavHostController) {
             })
         }
         composable(route = Screen.Backup.route) {
-            BackupScreen()
+            BackupScreen(onNavigateToRestore = { navController.navigate(Screen.Restore.route) })
+        }
+        composable(route = Screen.Restore.route) {
+            RestoreScreen(onBack = { navController.popBackStack() })
         }
         composable(route = Screen.Recovery.route) {
-            RestoreScreen()
+            val context = LocalContext.current
+            val repository = remember { com.semseytech.rtsdevicesuitepro.recovery.RecoveryRepository(context) }
+            val viewModel: com.semseytech.rtsdevicesuitepro.recovery.RecoveryViewModel = viewModel(
+                factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                        return com.semseytech.rtsdevicesuitepro.recovery.RecoveryViewModel(
+                            context.applicationContext as android.app.Application,
+                            repository
+                        ) as T
+                    }
+                }
+            )
+            com.semseytech.rtsdevicesuitepro.recovery.RecoveryScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() }
+            )
         }
         composable(route = Screen.Cleaner.route) {
             CleanerScreen(onBack = { navController.popBackStack() })
         }
         composable(route = Screen.Network.route) {
-            PlaceholderScreen(title = Screen.Network.title)
+            val context = LocalContext.current
+            val viewModel: com.semseytech.rtsdevicesuitepro.net.NetOptimizerViewModel = viewModel(
+                factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                        return com.semseytech.rtsdevicesuitepro.net.NetOptimizerViewModel(context.applicationContext as android.app.Application) as T
+                    }
+                }
+            )
+            com.semseytech.rtsdevicesuitepro.net.NetOptimizerScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onNavigateToAutomation = { navController.navigate(Screen.Automation.route) }
+            )
         }
         composable(route = Screen.Archive.route) {
             ArchiveScreen(onBack = { navController.popBackStack() })
         }
         composable(route = Screen.PreReset.route) {
-            PlaceholderScreen(title = Screen.PreReset.title)
+            com.semseytech.rtsdevicesuitepro.prereset.ui.PreResetGuideScreen(
+                onNavigate = { route -> navController.navigate(route) }
+            )
         }
         composable(route = Screen.ThemeEngine.route) {
             ThemeEngineScreen(onBack = { navController.popBackStack() })
@@ -70,8 +106,19 @@ fun SetupNavGraph(navController: NavHostController) {
         composable(route = Screen.ViewBackups.route) {
             ViewBackupsScreen(onBack = { navController.popBackStack() })
         }
-        composable(route = Screen.Config.route) {
-            ConfigScreen(onBack = { navController.popBackStack() })
+        composable(
+            route = Screen.Config.route,
+            arguments = listOf(navArgument("tab") { 
+                type = NavType.IntType
+                defaultValue = 0
+            })
+        ) { backStackEntry ->
+            val tabIndex = backStackEntry.arguments?.getInt("tab") ?: 0
+            ConfigScreen(
+                initialTab = tabIndex,
+                onBack = { navController.popBackStack() },
+                onNavigateToThemes = { navController.navigate(Screen.ThemeEngine.route) }
+            )
         }
         composable(route = Screen.LogExporter.route) {
             com.semseytech.rtsdevicesuitepro.tools.logs.LogExporterScreen(onBack = { navController.popBackStack() })
@@ -99,7 +146,89 @@ fun SetupNavGraph(navController: NavHostController) {
             )
         }
         composable(route = Screen.Automation.route) {
-            PlaceholderScreen(title = Screen.Automation.title)
+            com.semseytech.rtsdevicesuitepro.automation.ui.AutomationScreen(
+                onBackClick = { navController.popBackStack() },
+                onNavigate = { route -> navController.navigate(route) }
+            )
+        }
+        composable(route = Screen.FlowEditor.route) {
+            com.semseytech.rtsdevicesuitepro.automation.flow.ui.FlowEditorScreen(
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+        composable(route = Screen.AutomationControls.route) {
+            val context = LocalContext.current
+            val viewModel: com.semseytech.rtsdevicesuitepro.net.automation.NetworkAutomationViewModel = viewModel(
+                factory = object : ViewModelProvider.Factory {
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                        return com.semseytech.rtsdevicesuitepro.net.automation.NetworkAutomationViewModel(context.applicationContext as android.app.Application) as T
+                    }
+                }
+            )
+            com.semseytech.rtsdevicesuitepro.net.automation.AutomationControlsScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(route = Screen.Terminal.route) {
+            com.semseytech.rtsdevicesuitepro.terminal.ui.TerminalScreen(onBack = { navController.popBackStack() })
+        }
+        composable(route = Screen.BatteryEstimation.route) {
+            val context = LocalContext.current
+            val viewModel: BatteryViewModel = viewModel(
+                factory = object : ViewModelProvider.Factory {
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                        return BatteryViewModel(context.applicationContext as Application) as T
+                    }
+                }
+            )
+            BatteryScreen(viewModel = viewModel)
+        }
+        composable(route = Screen.HelpAndPermissions.route) {
+            HelpAndPermissionsScreen(onBack = { navController.popBackStack() })
+        }
+        composable(route = Screen.AdbSetup.route) {
+            com.semseytech.rtsdevicesuitepro.adb.ui.AdbSetupScreen(
+                onNavigateToConsole = { navController.navigate(Screen.AdbConsole.route) }
+            )
+        }
+        composable(route = Screen.AdbConsole.route) {
+            com.semseytech.rtsdevicesuitepro.adb.ui.AdbConsoleScreen()
+        }
+        composable(route = Screen.FileExplorer.route) {
+            val context = LocalContext.current
+            val viewModel: com.semseytech.rtsdevicesuitepro.filemanager.FileExplorerViewModel = viewModel(
+                factory = object : ViewModelProvider.Factory {
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                        return com.semseytech.rtsdevicesuitepro.filemanager.FileExplorerViewModel(context.applicationContext as android.app.Application) as T
+                    }
+                }
+            )
+            com.semseytech.rtsdevicesuitepro.filemanager.FileExplorerScreen(
+                viewModel = viewModel,
+                onNavigate = { route -> navController.navigate(route) },
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            route = Screen.FileList.route,
+            arguments = listOf(navArgument("path") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val path = java.net.URLDecoder.decode(backStackEntry.arguments?.getString("path") ?: "", "UTF-8")
+            val context = LocalContext.current
+            val viewModel: com.semseytech.rtsdevicesuitepro.filemanager.FileExplorerViewModel = viewModel(
+                factory = object : ViewModelProvider.Factory {
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                        return com.semseytech.rtsdevicesuitepro.filemanager.FileExplorerViewModel(context.applicationContext as android.app.Application) as T
+                    }
+                }
+            )
+            com.semseytech.rtsdevicesuitepro.filemanager.FileListScreen(
+                path = path,
+                viewModel = viewModel,
+                onNavigate = { route -> navController.navigate(route) },
+                onBack = { navController.popBackStack() }
+            )
         }
         composable(route = Screen.StorageAnalyzer.route) { backStackEntry ->
             val context = LocalContext.current
@@ -110,7 +239,7 @@ fun SetupNavGraph(navController: NavHostController) {
                 viewModelStoreOwner = mainActivityEntry,
                 factory = object : ViewModelProvider.Factory {
                     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                        return StorageAnalyzerViewModel(StorageAnalyzerRepository(context.applicationContext)) as T
+                        return StorageAnalyzerViewModel(context.applicationContext as Application, StorageAnalyzerRepository(context.applicationContext)) as T
                     }
                 }
             )
@@ -142,7 +271,7 @@ fun SetupNavGraph(navController: NavHostController) {
                 viewModelStoreOwner = storageEntry,
                 factory = object : ViewModelProvider.Factory {
                     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                        return StorageAnalyzerViewModel(StorageAnalyzerRepository(context.applicationContext)) as T
+                        return StorageAnalyzerViewModel(context.applicationContext as Application, StorageAnalyzerRepository(context.applicationContext)) as T
                     }
                 }
             )

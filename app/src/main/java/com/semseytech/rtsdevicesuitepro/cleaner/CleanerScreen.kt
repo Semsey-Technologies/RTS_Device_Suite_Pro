@@ -4,6 +4,9 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,12 +21,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import com.semseytech.rtsdevicesuitepro.ui.components.FileDisplaySettings
+import com.semseytech.rtsdevicesuitepro.ui.components.FileViewMode
 import com.semseytech.rtsdevicesuitepro.ui.theme.LocalTheme
 import com.semseytech.rtsdevicesuitepro.ui.theme.ThemeManager
 import java.util.Locale
@@ -42,6 +50,10 @@ fun CleanerScreen(
     val cleanupResult by viewModel.cleanupResult.collectAsState()
     val currentApp by viewModel.currentAppProcessing.collectAsState()
     val progress by viewModel.progress.collectAsState()
+    val displaySettings by viewModel.displaySettings.collectAsState()
+    val showSortMenu by viewModel.showSortMenu.collectAsState()
+    val showViewMenu by viewModel.showViewMenu.collectAsState()
+    val showGroupMenu by viewModel.showGroupMenu.collectAsState()
     val scale = ThemeManager.uiScale
 
     Scaffold(
@@ -55,6 +67,19 @@ fun CleanerScreen(
                 },
                 actions = {
                     if (state == CleanerState.IDLE || state == CleanerState.READY_TO_CLEAN) {
+                        IconButton(onClick = { viewModel.refreshScan() }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = currentTheme.accentColor)
+                        }
+                        CleanerMenus(
+                            showSortMenu = showSortMenu,
+                            onSortMenuToggle = { viewModel.setShowSortMenu(it) },
+                            showViewMenu = showViewMenu,
+                            onViewMenuToggle = { viewModel.setShowViewMenu(it) },
+                            showGroupMenu = showGroupMenu,
+                            onGroupMenuToggle = { viewModel.setShowGroupMenu(it) },
+                            displaySettings = displaySettings,
+                            onSettingsChanged = { viewModel.updateDisplaySettings(it) }
+                        )
                         TextButton(onClick = { viewModel.setAllSelection(true) }) {
                             Text("Select All", color = currentTheme.accentColor)
                         }
@@ -75,6 +100,7 @@ fun CleanerScreen(
                         categories = categories,
                         showAppsToggle = showAppsToggle,
                         apps = apps,
+                        displaySettings = displaySettings,
                         scale = scale,
                         accentColor = currentTheme.accentColor,
                         appTypes = viewModel.appTypeDefinitions,
@@ -121,6 +147,7 @@ fun CleanerSetupContent(
     categories: List<CleanupCategory>,
     showAppsToggle: Boolean,
     apps: List<AppCacheInfo>,
+    displaySettings: FileDisplaySettings,
     scale: Float,
     accentColor: Color,
     appTypes: List<AppTypeInfo>,
@@ -139,7 +166,15 @@ fun CleanerSetupContent(
             item { Spacer(modifier = Modifier.height(16.dp * scale)) }
             
             items(categories) { category ->
-                CleanupCategoryCard(category, scale, accentColor, onToggleCategory, onToggleExpand, onToggleItem)
+                CleanupCategoryCard(
+                    category = category,
+                    scale = scale,
+                    accentColor = accentColor,
+                    displaySettings = displaySettings,
+                    onToggleCategory = onToggleCategory,
+                    onToggleExpand = onToggleExpand,
+                    onToggleItem = onToggleItem
+                )
             }
 
             item {
@@ -191,6 +226,7 @@ fun CleanupCategoryCard(
     category: CleanupCategory,
     scale: Float,
     accentColor: Color,
+    displaySettings: FileDisplaySettings,
     onToggleCategory: (String) -> Unit,
     onToggleExpand: (String) -> Unit,
     onToggleItem: (String, String) -> Unit
@@ -227,34 +263,156 @@ fun CleanupCategoryCard(
             }
 
             AnimatedVisibility(visible = category.isExpanded) {
-                Column(modifier = Modifier.padding(start = 48.dp * scale, end = 16.dp * scale, bottom = 16.dp * scale)) {
-                    if (category.items.isEmpty()) {
-                        Text("No items found", color = Color.Gray, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 8.dp * scale))
+                if (category.items.isEmpty()) {
+                    Text("No items found", color = Color.Gray, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(16.dp * scale))
+                } else {
+                    if (displaySettings.viewMode == FileViewMode.DETAILS || displaySettings.viewMode == FileViewMode.LIST) {
+                        Column(modifier = Modifier.padding(start = 16.dp * scale, end = 16.dp * scale, bottom = 16.dp * scale)) {
+                            category.items.forEach { item ->
+                                CleanupItemRow(item, scale, accentColor) {
+                                    onToggleItem(category.id, item.id)
+                                }
+                            }
+                        }
                     } else {
-                        category.items.forEach { item ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth().clickable { onToggleItem(category.id, item.id) }.padding(vertical = 8.dp * scale),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Checkbox(
-                                    checked = item.isSelected,
-                                    onCheckedChange = { onToggleItem(category.id, item.id) },
-                                    colors = CheckboxDefaults.colors(checkedColor = accentColor)
-                                )
-                                Column {
-                                    Text(item.name, color = Color.White, style = MaterialTheme.typography.bodyMedium)
-                                    if (item.extraInfo != null) {
-                                        Text(item.extraInfo, color = Color.Gray, style = MaterialTheme.typography.labelSmall)
+                        val columns = when(displaySettings.viewMode) {
+                            FileViewMode.GRID_SMALL -> 4
+                            FileViewMode.GRID_MEDIUM -> 3
+                            FileViewMode.GRID_LARGE -> 2
+                            else -> 3
+                        }
+                        
+                        // We use a Box with fixed height for grid to avoid nesting infinite height lists
+                        // or better, just use a non-lazy grid for small categories
+                        Column(modifier = Modifier.padding(horizontal = 16.dp * scale, vertical = 8.dp * scale)) {
+                            category.items.chunked(columns).forEach { rowItems ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp * scale)
+                                ) {
+                                    rowItems.forEach { item ->
+                                        Box(modifier = Modifier.weight(1f)) {
+                                            CleanupItemGrid(item, displaySettings.viewMode, scale, accentColor) {
+                                                onToggleItem(category.id, item.id)
+                                            }
+                                        }
                                     }
-                                    if (item.sizeBytes > 0) {
-                                        Text(formatSize(item.sizeBytes), color = accentColor.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                                    // Fill empty slots if last row isn't full
+                                    repeat(columns - rowItems.size) {
+                                        Spacer(modifier = Modifier.weight(1f))
                                     }
                                 }
+                                Spacer(modifier = Modifier.height(8.dp * scale))
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun CleanupItemRow(
+    item: CleanupItem,
+    scale: Float,
+    accentColor: Color,
+    onToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable { onToggle() }.padding(vertical = 8.dp * scale),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = item.isSelected,
+            onCheckedChange = { onToggle() },
+            colors = CheckboxDefaults.colors(checkedColor = accentColor)
+        )
+        
+        Box(modifier = Modifier.size(40.dp * scale).clip(RoundedCornerShape(4.dp)).background(Color.White.copy(alpha = 0.1f))) {
+            AsyncImage(
+                model = item.path,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                error = null // Falls back to nothing or we could add icon
+            )
+        }
+        
+        Spacer(modifier = Modifier.width(12.dp * scale))
+        
+        Column(modifier = Modifier.weight(1f)) {
+            Text(item.name, color = Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (item.extraInfo != null) {
+                Text(item.extraInfo, color = Color.Gray, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (item.sizeBytes > 0) {
+                Text(formatSize(item.sizeBytes), color = accentColor.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+@Composable
+fun CleanupItemGrid(
+    item: CleanupItem,
+    viewMode: FileViewMode,
+    scale: Float,
+    accentColor: Color,
+    onToggle: () -> Unit
+) {
+    val size = when(viewMode) {
+        FileViewMode.GRID_SMALL -> 60.dp
+        FileViewMode.GRID_MEDIUM -> 90.dp
+        FileViewMode.GRID_LARGE -> 130.dp
+        else -> 90.dp
+    } * scale
+
+    Column(
+        modifier = Modifier
+            .width(size)
+            .clickable { onToggle() }
+            .padding(4.dp * scale),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(modifier = Modifier.size(size).clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.1f))) {
+            AsyncImage(
+                model = item.path,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+            
+            Box(modifier = Modifier.align(Alignment.TopStart).padding(2.dp)) {
+                Checkbox(
+                    checked = item.isSelected,
+                    onCheckedChange = { onToggle() },
+                    colors = CheckboxDefaults.colors(checkedColor = accentColor),
+                    modifier = Modifier.size(20.dp * scale)
+                )
+            }
+            
+            if (item.sizeBytes > 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(topStart = 4.dp))
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Text(formatSize(item.sizeBytes), color = Color.White, fontSize = 8.sp * scale)
+                }
+            }
+        }
+        
+        if (viewMode != FileViewMode.GRID_SMALL) {
+            Text(
+                item.name,
+                color = Color.White,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp * scale)
+            )
         }
     }
 }

@@ -8,10 +8,11 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.semseytech.rtsdevicesuitepro.ui.components.FileViewMode
 
 @Composable
 fun CategoryViewerGridContent(
-    viewMode: ViewMode,
+    viewMode: FileViewMode,
     groupedFiles: Map<String, List<FileInfo>>,
     collapsedGroups: Map<String, Boolean>,
     selectedFiles: Set<String>,
@@ -22,9 +23,9 @@ fun CategoryViewerGridContent(
     onFileClick: (FileInfo) -> Unit
 ) {
     val columnCount = when (viewMode) {
-        ViewMode.GRID_SMALL -> 5
-        ViewMode.GRID_MEDIUM -> 3
-        ViewMode.GRID_LARGE -> 2
+        FileViewMode.GRID_SMALL -> 5
+        FileViewMode.GRID_MEDIUM -> 3
+        FileViewMode.GRID_LARGE -> 2
         else -> 3
     }
 

@@ -1,0 +1,16 @@
+[
+  {
+    "thread_id": 1,
+    "contact": "John Doe",
+    "phone": "+15551234567",
+    "last_message": "See you soon!",
+    "timestamp": 1714320000000
+  },
+  {
+    "thread_id": 2,
+    "contact": "Jane Smith",
+    "phone": "+15559876543",
+    "last_message": "Did you get the files?",
+    "timestamp": 1714321000000
+  }
+]

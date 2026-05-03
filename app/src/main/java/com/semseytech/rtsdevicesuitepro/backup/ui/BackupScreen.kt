@@ -7,10 +7,11 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -20,26 +21,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.semseytech.rtsdevicesuitepro.backup.BackupViewModel
-import com.semseytech.rtsdevicesuitepro.backup.model.BackupCategory
-import com.semseytech.rtsdevicesuitepro.backup.model.BackupItem
+import com.semseytech.rtsdevicesuitepro.backup.BackupUiState
+import com.semseytech.rtsdevicesuitepro.backup.model.*
+import com.semseytech.rtsdevicesuitepro.archive.model.ArchiveFormat
+import com.semseytech.rtsdevicesuitepro.backup.ui.components.SortingAndFilteringHeader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-import android.content.Intent
-import android.provider.Telephony
-import android.app.role.RoleManager
-import androidx.compose.ui.window.Dialog
-import com.semseytech.rtsdevicesuitepro.backup.ArchiveType
-
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun BackupScreen(viewModel: BackupViewModel = viewModel()) {
+fun BackupScreen(
+    viewModel: BackupViewModel = viewModel(),
+    onNavigateToRestore: () -> Unit = {}
+) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -51,7 +52,9 @@ fun BackupScreen(viewModel: BackupViewModel = viewModel()) {
         val list = mutableListOf(
             Manifest.permission.READ_SMS,
             Manifest.permission.READ_CALL_LOG,
-            Manifest.permission.READ_CONTACTS
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.GET_ACCOUNTS,
+            Manifest.permission.BLUETOOTH_CONNECT
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             list.add(Manifest.permission.READ_MEDIA_IMAGES)
@@ -63,9 +66,7 @@ fun BackupScreen(viewModel: BackupViewModel = viewModel()) {
         list.toTypedArray()
     }
 
-    // Automatically load data if permissions are already granted
     LaunchedEffect(Unit) {
-        viewModel.checkDefaultSmsStatus()
         val allGranted = permissions.all {
             ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
         }
@@ -82,14 +83,6 @@ fun BackupScreen(viewModel: BackupViewModel = viewModel()) {
         }
     }
 
-    val defaultSmsLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { _ ->
-        // Reload data after potentially becoming default app
-        viewModel.checkDefaultSmsStatus()
-        viewModel.loadRealData()
-    }
-
     val saveFileLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("*/*")
     ) { uri ->
@@ -103,7 +96,7 @@ fun BackupScreen(viewModel: BackupViewModel = viewModel()) {
                                 input.copyTo(output)
                             }
                         }
-                        sourceFile.delete() // Clean up internal temp file
+                        sourceFile.delete() 
                         snackbarHostState.showSnackbar("Backup saved successfully!")
                     } catch (e: Exception) {
                         snackbarHostState.showSnackbar("Failed to save backup: ${e.message}")
@@ -119,39 +112,10 @@ fun BackupScreen(viewModel: BackupViewModel = viewModel()) {
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Backup Module") },
+                title = { Text("Backup Suite Pro") },
                 actions = {
-                    if (!uiState.isDefaultSmsApp) {
-                        TextButton(onClick = {
-                            try {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                    val roleManager = context.getSystemService(RoleManager::class.java)
-                                    if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_SMS)) {
-                                        val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
-                                        defaultSmsLauncher.launch(intent)
-                                    } else {
-                                        // Fallback for Q if RoleManager is not available
-                                        val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
-                                            putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, context.packageName)
-                                        }
-                                        defaultSmsLauncher.launch(intent)
-                                    }
-                                } else {
-                                    val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
-                                        putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, context.packageName)
-                                    }
-                                    defaultSmsLauncher.launch(intent)
-                                }
-                            } catch (e: Exception) {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar("Could not open SMS settings: ${e.message}")
-                                }
-                            }
-                        }) {
-                            Icon(Icons.Default.Message, contentDescription = null)
-                            Spacer(Modifier.width(4.dp))
-                            Text("Set Default SMS")
-                        }
+                    IconButton(onClick = onNavigateToRestore) {
+                        Icon(Icons.Default.Restore, contentDescription = "Restore")
                     }
                 }
             )
@@ -162,110 +126,88 @@ fun BackupScreen(viewModel: BackupViewModel = viewModel()) {
                     onClick = { showArchiveOptions = true },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    enabled = uiState.categories.any { cat -> cat.items.any { it.isSelected } }
+                        .padding(16.dp)
+                        .height(56.dp),
+                    enabled = uiState.categories.any { cat -> cat.items.any { it.isSelected } },
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Backup Selected Items")
+                    Icon(Icons.Default.Backup, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Configure & Backup")
                 }
             }
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             if (uiState.isLoading) {
-                Column(
-                    modifier = Modifier.align(Alignment.Center),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    CircularProgressIndicator()
-                    Spacer(Modifier.height(8.dp))
-                    Text(uiState.backupStatus)
-                    LinearProgressIndicator(
-                        progress = uiState.backupProgress,
-                        modifier = Modifier.padding(horizontal = 32.dp)
-                    )
-                }
+                LoadingOverlay(uiState.backupStatus, uiState.backupProgress)
             } else if (uiState.categories.isEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(48.dp))
-                    Spacer(Modifier.height(16.dp))
-                    Text("No data found or permissions denied.")
-                    Button(onClick = { permissionsLauncher.launch(permissions) }) {
-                        Text("Retry Permissions")
-                    }
-                }
+                EmptyState(onRetry = { permissionsLauncher.launch(permissions) })
             } else {
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     item {
-                        MasterBackupButton(
-                            isSelected = uiState.isMasterSelected,
-                            onToggle = { viewModel.toggleMasterBackup() }
+                        SortingAndFilteringHeader(
+                            sortType = uiState.sortType,
+                            onSortSelected = { viewModel.setSortType(it) },
+                            viewMode = uiState.viewMode,
+                            onViewModeSelected = { viewModel.setViewMode(it) },
+                            groupType = uiState.groupType,
+                            onGroupTypeSelected = { viewModel.setGroupType(it) }
                         )
                     }
 
-                    uiState.categories.forEach { category ->
-                        item(key = "header_${category.id}") {
-                            CategoryCard(
-                                category = category,
-                                onExpandToggle = { viewModel.toggleCategoryExpansion(category.id) },
-                                onCategorySelect = { viewModel.toggleCategorySelection(category.id, it) }
+                    val groupedCategories = uiState.categories.groupBy { it.parentCategory ?: "Other" }
+                    groupedCategories.forEach { (parent, categories) ->
+                        item {
+                            Text(
+                                text = parent.uppercase(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
                             )
                         }
-
-                        if (category.isExpanded) {
-                            if (category.items.isEmpty()) {
-                                item(key = "empty_${category.id}") {
-                                    Text(
-                                        "No items found in this category.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.padding(start = 32.dp, top = 8.dp, bottom = 8.dp)
-                                    )
-                                }
-                            } else {
-                                item(key = "actions_${category.id}") {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
-                                        horizontalArrangement = Arrangement.End
-                                    ) {
-                                        TextButton(onClick = { viewModel.toggleCategorySelection(category.id, true) }) {
-                                            Text("Select All")
-                                        }
-                                        TextButton(onClick = { viewModel.toggleCategorySelection(category.id, false) }) {
-                                            Text("Deselect All")
-                                        }
-                                    }
-                                }
+                        categories.forEach { category ->
+                            item(key = category.id) {
+                                CategoryCard(
+                                    category = category,
+                                    onExpandToggle = { viewModel.toggleCategoryExpansion(category.id) },
+                                    onCategorySelect = { viewModel.toggleCategorySelection(category.id, it) }
+                                )
+                            }
+                            if (category.isExpanded) {
                                 items(category.items, key = { "${category.id}_${it.id}" }) { item ->
-                                    Box(modifier = Modifier.padding(start = 24.dp)) {
-                                        BackupItemRow(item = item, onSelect = { viewModel.toggleItemSelection(category.id, item.id) })
-                                    }
+                                    BackupItemRow(
+                                        item = item, 
+                                        viewMode = uiState.viewMode,
+                                        onSelect = { viewModel.toggleItemSelection(category.id, item.id) }
+                                    )
                                 }
                             }
                         }
                     }
+                    item { Spacer(Modifier.height(80.dp)) }
                 }
             }
         }
 
         if (showArchiveOptions) {
-            ArchiveOptionsDialog(
-                selectedType = uiState.selectedArchiveType,
-                onTypeSelected = { viewModel.setArchiveType(it) },
+            AdvancedArchiveDialog(
+                uiState = uiState,
+                onArchiveTypeSelected = { viewModel.setArchiveType(it) },
+                onCompressionLevelChanged = { viewModel.setCompressionLevel(it) },
+                onFileNameChanged = { viewModel.setOutputFileName(it) },
+                onDestinationSelected = { viewModel.setDestination(it) },
                 onDismiss = { showArchiveOptions = false },
                 onConfirm = {
                     showArchiveOptions = false
-                    viewModel.startBackup { path ->
-                        pendingBackupPath = path
-                        val fileName = "RTS_Backup_${System.currentTimeMillis()}${uiState.selectedArchiveType.extension}"
-                        saveFileLauncher.launch(fileName)
+                    viewModel.startBackup { message ->
+                        scope.launch {
+                            snackbarHostState.showSnackbar(message)
+                        }
                     }
                 }
             )
@@ -273,35 +215,69 @@ fun BackupScreen(viewModel: BackupViewModel = viewModel()) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ArchiveOptionsDialog(
-    selectedType: ArchiveType,
-    onTypeSelected: (ArchiveType) -> Unit,
+fun AdvancedArchiveDialog(
+    uiState: BackupUiState,
+    onArchiveTypeSelected: (ArchiveFormat) -> Unit,
+    onCompressionLevelChanged: (Int) -> Unit,
+    onFileNameChanged: (String) -> Unit,
+    onDestinationSelected: (BackupDestination) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Backup Options") },
+        title = { Text("Advanced Backup Configuration") },
         text = {
-            Column {
-                Text("Select Archive Type:")
-                ArchiveType.values().forEach { type ->
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                OutlinedTextField(
+                    value = uiState.outputFileName,
+                    onValueChange = onFileNameChanged,
+                    label = { Text("Output Filename") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(Modifier.height(16.dp))
+                Text("Archive Format:", style = MaterialTheme.typography.labelLarge)
+                FlowRow(modifier = Modifier.fillMaxWidth()) {
+                    ArchiveFormat.values().forEach { format ->
+                        FilterChip(
+                            selected = uiState.selectedArchiveType == format,
+                            onClick = { onArchiveTypeSelected(format) },
+                            label = { Text(format.displayName) },
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Text("Compression Level: ${uiState.compressionLevel}", style = MaterialTheme.typography.labelLarge)
+                Slider(
+                    value = uiState.compressionLevel.toFloat(),
+                    onValueChange = { onCompressionLevelChanged(it.toInt()) },
+                    valueRange = 0f..9f,
+                    steps = 8
+                )
+
+                Spacer(Modifier.height(16.dp))
+                Text("Destination:", style = MaterialTheme.typography.labelLarge)
+                BackupDestinationType.values().forEach { destType ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onTypeSelected(type) }
+                            .clickable { onDestinationSelected(BackupDestination(destType, destType.name)) }
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        RadioButton(selected = type == selectedType, onClick = { onTypeSelected(type) })
-                        Text(type.name, modifier = Modifier.padding(start = 8.dp))
+                        RadioButton(selected = uiState.selectedDestination.type == destType, onClick = { onDestinationSelected(BackupDestination(destType, destType.name)) })
+                        Text(destType.name.replace("_", " "), modifier = Modifier.padding(start = 8.dp))
                     }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm) { Text("Start") }
+            Button(onClick = onConfirm) { Text("Start Backup") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
@@ -310,89 +286,33 @@ fun ArchiveOptionsDialog(
 }
 
 @Composable
-fun MasterBackupButton(isSelected: Boolean, onToggle: () -> Unit) {
+fun CategoryCard(category: BackupCategory, onExpandToggle: () -> Unit, onCategorySelect: (Boolean) -> Unit) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onToggle() },
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-        )
+        modifier = Modifier.fillMaxWidth().clickable { onExpandToggle() },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp))
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "Backup Everything",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-@Composable
-fun CategoryCard(
-    category: BackupCategory,
-    onExpandToggle: () -> Unit,
-    onCategorySelect: (Boolean) -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onExpandToggle() }
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Checkbox(
-                checked = category.isAllSelected,
-                onCheckedChange = { onCategorySelect(it) }
-            )
-            Text(
-                text = category.name,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleSmall
-            )
-            Text(
-                text = "(${category.items.size})",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
-            Icon(
-                imageVector = if (category.isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                contentDescription = null
-            )
-        }
-    }
-}
-
-@Composable
-fun BackupItemRow(item: BackupItem, onSelect: () -> Unit) {
-    var isExpanded by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { isExpanded = !isExpanded }
-            .padding(vertical = 4.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = item.isSelected, onCheckedChange = { onSelect() })
-            Column {
-                Text(item.displayName, style = MaterialTheme.typography.bodyMedium)
-                ItemSubtitle(item)
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = category.isAllSelected, onCheckedChange = { onCategorySelect(it) })
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = category.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(text = "${category.items.size} items", style = MaterialTheme.typography.bodySmall)
             }
+            Icon(if (category.isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
         }
-        
-        AnimatedVisibility(visible = isExpanded) {
-            ItemPreview(item)
+    }
+}
+
+@Composable
+fun BackupItemRow(item: BackupItem, viewMode: ViewMode, onSelect: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable { onSelect() }.padding(start = 16.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(checked = item.isSelected, onCheckedChange = { onSelect() })
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Text(item.displayName, style = MaterialTheme.typography.bodyMedium)
+            ItemSubtitle(item)
         }
     }
 }
@@ -400,59 +320,45 @@ fun BackupItemRow(item: BackupItem, onSelect: () -> Unit) {
 @Composable
 fun ItemSubtitle(item: BackupItem) {
     val text = when (item) {
-        is BackupItem.SmsMessage -> "${item.messageCount} messages • ${formatDate(item.date)}"
-        is BackupItem.CallLogEntry -> "${item.latestType} • ${item.callCount} calls • ${formatDate(item.latestDate)}"
-        is BackupItem.Contact -> item.phoneNumbers.firstOrNull() ?: "No number"
-        is BackupItem.Apk -> "${item.packageName} (v${item.version})"
+        is BackupItem.SmsMessage -> "${item.messageCount} messages"
         is BackupItem.UserFile -> formatSize(item.size)
-        is BackupItem.LauncherConfig -> "System Layout"
-        is BackupItem.UserSetting -> "Device Setting"
+        is BackupItem.Apk -> item.packageName
+        is BackupItem.SystemSetting -> item.category
+        else -> formatDate(item.date)
     }
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
 }
 
 @Composable
-fun ItemPreview(item: BackupItem) {
-    Box(modifier = Modifier.padding(start = 48.dp, top = 4.dp, bottom = 8.dp)) {
-        when (item) {
-            is BackupItem.SmsMessage -> {
-                Column {
-                    Text("Latest: ${item.snippet}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                    item.messages.take(3).forEach { msg ->
-                        Text("- ${if (msg.type == 2) "Me" else item.sender}: ${msg.body}", style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (item.messages.size > 3) Text("... and ${item.messages.size - 3} more", style = MaterialTheme.typography.bodySmall, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
-                }
-            }
-            is BackupItem.CallLogEntry -> {
-                Column {
-                    Text("Total Duration: ${item.totalDuration}s", style = MaterialTheme.typography.bodySmall)
-                    item.calls.take(3).forEach { call ->
-                        val type = when(call.type) {
-                            1 -> "Incoming"
-                            2 -> "Outgoing"
-                            3 -> "Missed"
-                            else -> "Unknown"
-                        }
-                        Text("- $type: ${formatDate(call.date)} (${call.duration}s)", style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (item.calls.size > 3) Text("... and ${item.calls.size - 3} more", style = MaterialTheme.typography.bodySmall, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
-                }
-            }
-            is BackupItem.Contact -> Text("Emails: ${item.emails.joinToString()}\nPhones: ${item.phoneNumbers.joinToString()}", style = MaterialTheme.typography.bodySmall)
-            is BackupItem.Apk -> Text("Package: ${item.packageName}\nVersion: ${item.version}", style = MaterialTheme.typography.bodySmall)
-            is BackupItem.UserFile -> Text("Path: ${item.path}\nType: ${item.mimeType}", style = MaterialTheme.typography.bodySmall)
-            else -> Text("No additional details available.", style = MaterialTheme.typography.bodySmall)
+fun LoadingOverlay(status: String, progress: Float) {
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(modifier = Modifier.size(64.dp))
+            Spacer(Modifier.height(16.dp))
+            Text(status, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            LinearProgressIndicator(progress = progress, modifier = Modifier.width(200.dp))
         }
     }
 }
 
-fun formatDate(timestamp: Long): String {
-    return SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()).format(Date(timestamp))
+@Composable
+fun EmptyState(onRetry: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Default.Storage, contentDescription = null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.outline)
+        Spacer(Modifier.height(16.dp))
+        Text("No backup categories found", style = MaterialTheme.typography.titleLarge)
+        Text("Please grant permissions to scan your device", style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(24.dp))
+        Button(onClick = onRetry) { Text("Grant Permissions") }
+    }
 }
 
+fun formatDate(timestamp: Long): String = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(timestamp))
+
 fun formatSize(bytes: Long): String {
-    val kb = bytes / 1024.0
-    val mb = kb / 1024.0
-    return if (mb > 1) "%.2f MB".format(mb) else "%.2f KB".format(kb)
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
+    return String.format("%.1f %s", bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
 }

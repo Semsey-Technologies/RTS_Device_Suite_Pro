@@ -1,29 +1,44 @@
 package com.semseytech.rtsdevicesuitepro.cleaner
 
 import android.app.Application
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Environment
+import android.provider.ContactsContract
 import android.provider.Settings
+import android.util.Log
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import java.io.File
+import java.util.*
+import com.semseytech.rtsdevicesuitepro.ui.components.*
 
 class CleanerViewModel(application: Application) : AndroidViewModel(application) {
-
+    private val TAG = "CleanerViewModel"
     private val _state = MutableStateFlow(CleanerState.IDLE)
     val state = _state.asStateFlow()
 
     private val _categories = MutableStateFlow<List<CleanupCategory>>(emptyList())
-    val categories = _categories.asStateFlow()
+    
+    private val _displaySettings = MutableStateFlow(FileDisplaySettings())
+    val displaySettings = _displaySettings.asStateFlow()
+
+    val categories = combine(_categories, _displaySettings) { cats, settings ->
+        applyDisplaySettings(cats, settings)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _apps = MutableStateFlow<List<AppCacheInfo>>(emptyList())
     val apps = _apps.asStateFlow()
@@ -40,6 +55,15 @@ class CleanerViewModel(application: Application) : AndroidViewModel(application)
     private val _currentAppProcessing = MutableStateFlow<AppCacheInfo?>(null)
     val currentAppProcessing = _currentAppProcessing.asStateFlow()
 
+    private val _showSortMenu = MutableStateFlow(false)
+    val showSortMenu = _showSortMenu.asStateFlow()
+
+    private val _showViewMenu = MutableStateFlow(false)
+    val showViewMenu = _showViewMenu.asStateFlow()
+
+    private val _showGroupMenu = MutableStateFlow(false)
+    val showGroupMenu = _showGroupMenu.asStateFlow()
+
     val appTypeDefinitions = listOf(
         AppTypeInfo("Banking & Finance", "Apps used for banking, investments, or bill payments.", "Clearing cache might remove saved login methods or session tokens, requiring a full re-login or security verification."),
         AppTypeInfo("Social Media", "Facebook, Instagram, X (Twitter), etc.", "Clearing cache will remove temporary image and video data. While safe, it will significantly increase data usage and load times as the app re-downloads everything."),
@@ -50,28 +74,188 @@ class CleanerViewModel(application: Application) : AndroidViewModel(application)
     )
 
     init {
-        loadCategories()
+        performInitialScan()
     }
 
-    private fun loadCategories() {
-        _categories.value = listOf(
-            CleanupCategory("dupes", "Duplicate Files", "Removes identical copies of files", Icons.Outlined.ContentCopy, 
-                items = listOf(
-                    CleanupItem("d1", "/sdcard/Downloads/IMG_001_copy.jpg", "IMG_001_copy.jpg", 1024 * 1024 * 2, extraInfo = "Duplicate of IMG_001.jpg"),
-                    CleanupItem("d2", "/sdcard/DCIM/Video_02_1.mp4", "Video_02_1.mp4", 1024 * 1024 * 45, extraInfo = "Duplicate of Video_02.mp4")
-                )),
-            CleanupCategory("empty_folders", "Empty Folders", "Removes directories with no content", Icons.Outlined.Folder,
-                items = listOf(
-                    CleanupItem("f1", "/sdcard/Android/data/com.old.app/cache", "cache (com.old.app)"),
-                    CleanupItem("f2", "/sdcard/Download/Temp_Folders/Old_Project", "Old_Project")
-                )),
-            CleanupCategory("residual", "Residual Data", "Leftover files from uninstalled apps", Icons.Outlined.DeleteSweep),
-            CleanupCategory("downloads", "Failed Downloads", "Corrupted or incomplete downloads", Icons.Outlined.FileDownloadOff),
-            CleanupCategory("temp", "Temp & Thumbnails", "Temporary cache and image previews", Icons.Outlined.Cached),
-            CleanupCategory("recycle", "Recycle Bin", "Permanently empty deleted items", Icons.Outlined.DeleteOutline, isSelected = false),
-            CleanupCategory("logs", "Call Logs", "Clear recent call history", Icons.Outlined.Call, isSelected = false),
-            CleanupCategory("sms", "SMS Threads", "Clear selected text messages", Icons.Outlined.Sms, isSelected = false)
+    private fun performInitialScan() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.value = CleanerState.SCANNING
+            val externalStorage = Environment.getExternalStorageDirectory()
+            
+            val duplicates = findDuplicates(externalStorage)
+            val duplicateContacts = findDuplicateContacts()
+            val emptyFolders = findEmptyFolders(externalStorage)
+            val tempFiles = findTempFiles(externalStorage)
+
+            _categories.value = listOf(
+                CleanupCategory("dupes", "Duplicate Files", "Removes identical copies of files", Icons.Outlined.ContentCopy, items = duplicates),
+                CleanupCategory("contact_dupes", "Duplicate Contacts", "Identical contact entries", Icons.Outlined.Person, items = duplicateContacts),
+                CleanupCategory("empty_folders", "Empty Folders", "Removes directories with no content", Icons.Outlined.Folder, items = emptyFolders),
+                CleanupCategory("temp", "Temp & Thumbnails", "Temporary cache and image previews", Icons.Outlined.Cached, items = tempFiles),
+                CleanupCategory("residual", "Residual Data", "Leftover files from uninstalled apps", Icons.Outlined.DeleteSweep),
+                CleanupCategory("downloads", "Failed Downloads", "Corrupted or incomplete downloads", Icons.Outlined.FileDownloadOff),
+                CleanupCategory("recycle", "Recycle Bin", "Permanently empty deleted items", Icons.Outlined.DeleteOutline, isSelected = false),
+                CleanupCategory("logs", "Call Logs", "Clear recent call history", Icons.Outlined.Call, isSelected = false),
+                CleanupCategory("sms", "SMS Threads", "Clear selected text messages", Icons.Outlined.Sms, isSelected = false)
+            )
+            _state.value = CleanerState.IDLE
+        }
+    }
+
+    fun refreshScan() {
+        performInitialScan()
+    }
+
+    private fun findDuplicates(root: File): List<CleanupItem> {
+        val fileMap = mutableMapOf<String, File>()
+        val dupes = mutableListOf<CleanupItem>()
+        
+        root.walkTopDown().forEach { file ->
+            if (file.isFile) {
+                val key = "${file.name}_${file.length()}"
+                if (fileMap.containsKey(key)) {
+                    val original = fileMap[key]!!
+                    dupes.add(CleanupItem(
+                        id = UUID.randomUUID().toString(),
+                        path = file.absolutePath,
+                        name = file.name,
+                        sizeBytes = file.length(),
+                        extraInfo = "Duplicate of ${original.name} in ${original.parentFile?.name ?: "root"}"
+                    ))
+                } else {
+                    fileMap[key] = file
+                }
+            }
+        }
+        return dupes
+    }
+
+    private fun findDuplicateContacts(): List<CleanupItem> {
+        val context = getApplication<Application>()
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CONTACTS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "Missing READ_CONTACTS permission for duplicate scan")
+            return emptyList()
+        }
+
+        val contentResolver = context.contentResolver
+        val dupes = mutableListOf<CleanupItem>()
+        val seenByNumber = mutableMapOf<String, String>() // NormalizedNumber -> ContactID
+        val seenByName = mutableMapOf<String, String>()   // Name -> ContactID
+
+        // 1. Scan Phone Numbers
+        val phoneCursor = contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER
+            ),
+            null, null, null
         )
+
+        phoneCursor?.use {
+            val idIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
+            val nameIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+            val numIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+
+            while (it.moveToNext()) {
+                val id = it.getString(idIdx)
+                val name = it.getString(nameIdx) ?: "Unknown"
+                val rawNumber = it.getString(numIdx) ?: ""
+                val normalizedNumber = rawNumber.replace(Regex("[^0-9]"), "")
+                
+                if (normalizedNumber.length < 7) continue
+                
+                if (seenByNumber.containsKey(normalizedNumber)) {
+                    val originalId = seenByNumber[normalizedNumber]!!
+                    if (originalId != id) {
+                        dupes.add(CleanupItem(
+                            id = id,
+                            path = "contact://$id",
+                            name = name,
+                            sizeBytes = 0,
+                            extraInfo = "Same number as another contact ($rawNumber)"
+                        ))
+                    }
+                } else {
+                    seenByNumber[normalizedNumber] = id
+                }
+            }
+        }
+
+        // 2. Scan Names (for contacts without numbers)
+        val nameCursor = contentResolver.query(
+            ContactsContract.Contacts.CONTENT_URI,
+            arrayOf(ContactsContract.Contacts._ID, ContactsContract.Contacts.DISPLAY_NAME),
+            null, null, null
+        )
+
+        nameCursor?.use {
+            val idIdx = it.getColumnIndex(ContactsContract.Contacts._ID)
+            val nameIdx = it.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME)
+
+            while (it.moveToNext()) {
+                val id = it.getString(idIdx)
+                val name = it.getString(nameIdx) ?: continue
+                if (name.isBlank() || name == "Unknown") continue
+                
+                val lowerName = name.lowercase().trim()
+                if (seenByName.containsKey(lowerName)) {
+                    val originalId = seenByName[lowerName]!!
+                    if (originalId != id) {
+                        // Check if we already flagged this ID via phone scan
+                        if (dupes.none { it.id == id }) {
+                            dupes.add(CleanupItem(
+                                id = id,
+                                path = "contact://$id",
+                                name = name,
+                                sizeBytes = 0,
+                                extraInfo = "Identical name to another contact"
+                            ))
+                        }
+                    }
+                } else {
+                    seenByName[lowerName] = id
+                }
+            }
+        }
+        
+        Log.d(TAG, "Found ${dupes.size} duplicate contacts")
+        return dupes.distinctBy { it.id }
+    }
+
+    private fun findEmptyFolders(root: File): List<CleanupItem> {
+        val emptyFolders = mutableListOf<CleanupItem>()
+        root.walkBottomUp().forEach { file ->
+            if (file.isDirectory) {
+                val children = file.list()
+                if (children != null && children.isEmpty()) {
+                    emptyFolders.add(CleanupItem(
+                        id = UUID.randomUUID().toString(),
+                        path = file.absolutePath,
+                        name = file.name,
+                        sizeBytes = 0
+                    ))
+                }
+            }
+        }
+        return emptyFolders
+    }
+
+    private fun findTempFiles(root: File): List<CleanupItem> {
+        val tempItems = mutableListOf<CleanupItem>()
+        val tempPatterns = listOf(".tmp", ".temp", ".cache", "thumbnails", ".log")
+        root.walkTopDown().forEach { file ->
+            if (file.isFile && tempPatterns.any { file.name.contains(it, ignoreCase = true) || file.path.contains(it, ignoreCase = true) }) {
+                tempItems.add(CleanupItem(
+                    id = UUID.randomUUID().toString(),
+                    path = file.absolutePath,
+                    name = file.name,
+                    sizeBytes = file.length()
+                ))
+            }
+        }
+        return tempItems
     }
 
     fun toggleCategoryExpansion(id: String) {
@@ -130,20 +314,24 @@ class CleanerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun scanApps() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val pm = getApplication<Application>().packageManager
             val installedApps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
             
             val appList = installedApps.filter { 
                 (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 
             }.map { appInfo ->
+                // Note: Getting real cache size requires specific permissions or usage stats API.
+                // For now, we use the APK size as a proxy or 0 if we can't get it, 
+                // but we inform the user they will clear it manually.
+                val file = File(appInfo.sourceDir)
                 AppCacheInfo(
                     packageName = appInfo.packageName,
                     appName = pm.getApplicationLabel(appInfo).toString(),
-                    cacheSize = (10..500).random().toLong() * 1024 * 1024,
+                    cacheSize = if (file.exists()) file.length() else 0L, 
                     iconDrawable = pm.getApplicationIcon(appInfo),
                     warningReason = getWarningReason(appInfo.packageName),
-                    isSelected = false // Default to false
+                    isSelected = false
                 )
             }.sortedByDescending { it.cacheSize }
             
@@ -164,7 +352,7 @@ class CleanerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun startCleanup() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _state.value = CleanerState.CLEANING
             
             val selectedItems = mutableListOf<Pair<String, CleanupItem>>()
@@ -182,26 +370,31 @@ class CleanerViewModel(application: Application) : AndroidViewModel(application)
             var dupesRemoved = 0
             var foldersCleared = 0
 
-            if (total > 0) {
-                selectedItems.forEach { (catId, item) ->
-                    processed++
-                    _progress.value = CleanupProgress(
-                        currentItemName = item.path,
-                        progress = processed.toFloat() / total,
-                        itemsProcessed = processed,
-                        totalItems = total
-                    )
-                    
-                    delay(150) // Simulate file deletion delay
-                    
-                    totalCleaned += item.sizeBytes
-                    if (catId == "dupes") dupesRemoved++
-                    if (catId == "empty_folders") foldersCleared++
+            selectedItems.forEach { (catId, item) ->
+                processed++
+                _progress.value = CleanupProgress(
+                    currentItemName = if (item.path.startsWith("contact://")) "Contact: ${item.name}" else item.path,
+                    progress = processed.toFloat() / total,
+                    itemsProcessed = processed,
+                    totalItems = total
+                )
+                
+                if (item.path.startsWith("contact://")) {
+                    if (deleteContact(item.id)) {
+                        totalCleaned += 0 // Size unknown for contacts
+                        if (catId == "contact_dupes") dupesRemoved++
+                    }
+                } else {
+                    val file = File(item.path)
+                    if (file.exists()) {
+                        val size = file.length()
+                        if (file.delete()) {
+                            totalCleaned += size
+                            if (catId == "dupes") dupesRemoved++
+                            if (catId == "empty_folders") foldersCleared++
+                        }
+                    }
                 }
-            } else {
-                // If no items selected, just a brief delay for system tasks
-                _progress.value = CleanupProgress("System optimization...", 0.5f, 0, 0)
-                delay(1000)
             }
 
             _cleanupResult.value = CleanupResult(
@@ -210,16 +403,19 @@ class CleanerViewModel(application: Application) : AndroidViewModel(application)
                 foldersCleared = foldersCleared
             )
 
-            if (_showAppsToggle.value) {
-                val selectedApps = _apps.value.filter { it.isSelected }
-                if (selectedApps.isNotEmpty()) {
-                    _state.value = CleanerState.GUIDED_CACHE
-                    _currentAppProcessing.value = selectedApps.first()
+            withContext(Dispatchers.Main) {
+                if (_showAppsToggle.value) {
+                    val selectedApps = _apps.value.filter { it.isSelected }
+                    if (selectedApps.isNotEmpty()) {
+                        _state.value = CleanerState.GUIDED_CACHE
+                        _currentAppProcessing.value = selectedApps.first()
+                        openAppStorageSettings(_currentAppProcessing.value!!.packageName)
+                    } else {
+                        _state.value = CleanerState.COMPLETED
+                    }
                 } else {
                     _state.value = CleanerState.COMPLETED
                 }
-            } else {
-                _state.value = CleanerState.COMPLETED
             }
         }
     }
@@ -243,5 +439,72 @@ class CleanerViewModel(application: Application) : AndroidViewModel(application)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         getApplication<Application>().startActivity(intent)
+    }
+
+    private fun deleteContact(contactId: String): Boolean {
+        return try {
+            val contentResolver = getApplication<Application>().contentResolver
+            val uri = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, contactId)
+            val rowsDeleted = contentResolver.delete(uri, null, null)
+            rowsDeleted > 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun updateDisplaySettings(settings: FileDisplaySettings) {
+        _displaySettings.value = settings
+    }
+
+    fun setShowSortMenu(show: Boolean) { _showSortMenu.value = show }
+    fun setShowViewMenu(show: Boolean) { _showViewMenu.value = show }
+    fun setShowGroupMenu(show: Boolean) { _showGroupMenu.value = show }
+
+    fun setSortOption(option: FileSortOption) {
+        _displaySettings.update { it.copy(sortOption = option) }
+    }
+
+    fun setSortOrder(order: FileSortOrder) {
+        _displaySettings.update { it.copy(sortOrder = order) }
+    }
+
+    fun setViewMode(mode: FileViewMode) {
+        _displaySettings.update { it.copy(viewMode = mode) }
+    }
+
+    fun setGroupBy(option: FileGroupByOption) {
+        _displaySettings.update { it.copy(groupBy = option) }
+    }
+
+    private fun applyDisplaySettings(categories: List<CleanupCategory>, settings: FileDisplaySettings): List<CleanupCategory> {
+        // First sort items within each category
+        val updatedCategories = categories.map { category ->
+            val sortedItems = sortItems(category.items, settings.sortOption, settings.sortOrder)
+            category.copy(items = sortedItems)
+        }
+
+        // Then handle grouping if needed (simplistic approach for now)
+        return when (settings.groupBy) {
+            FileGroupByOption.SIZE_RANGE -> groupByDimensions(updatedCategories) { it.sizeBytes }
+            else -> updatedCategories
+        }
+    }
+
+    private fun sortItems(items: List<CleanupItem>, option: FileSortOption, order: FileSortOrder): List<CleanupItem> {
+        val comparator = when (option) {
+            FileSortOption.NAME -> compareBy<CleanupItem> { it.name.lowercase() }
+            FileSortOption.SIZE -> compareBy<CleanupItem> { it.sizeBytes }
+            FileSortOption.DATE -> compareBy<CleanupItem> { File(it.path).lastModified() }
+            FileSortOption.TYPE -> compareBy<CleanupItem> { it.name.substringAfterLast(".", "").lowercase() }
+            else -> compareBy<CleanupItem> { it.sizeBytes }
+        }
+        
+        return if (order == FileSortOrder.DESCENDING) items.sortedWith(comparator.reversed()) else items.sortedWith(comparator)
+    }
+
+    private fun groupByDimensions(categories: List<CleanupCategory>, selector: (CleanupItem) -> Long): List<CleanupCategory> {
+        // For now, we keep original categories but we could flatten and regroup
+        // Let's just sort the categories themselves by total size for now as a "grouping" effect
+        return categories.sortedByDescending { it.items.sumOf { item -> item.sizeBytes } }
     }
 }

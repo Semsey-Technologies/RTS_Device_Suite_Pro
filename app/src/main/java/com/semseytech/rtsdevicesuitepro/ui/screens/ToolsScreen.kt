@@ -9,9 +9,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material3.*
@@ -78,12 +76,14 @@ fun ToolsScreen(onNavigate: (String) -> Unit) {
                 }
         ) {
             val tools = listOf(
-                ToolItem("Log Exporter", "Generate secure bug reports", Icons.Default.Terminal, Screen.LogExporter.route, Color(0xFF00D1FF)),
-                ToolItem("System Config", "Advanced device settings", Icons.Default.Settings, Screen.Network.route, Color(0xFF00FF99)),
-                ToolItem("Command Terminal", "Direct shell access", Icons.Default.Terminal, "terminal", Color(0xFFB58900)),
-                ToolItem("Resource Monitor", "Real-time hardware stats", Icons.Outlined.Analytics, Screen.ResourceMonitor.route, Color(0xFFA020F0)),
-                ToolItem("Smart Organizer", "Automated file management", Icons.Outlined.AutoFixHigh, Screen.SmartOrganizer.route, Color(0xFF00FF99)),
-                ToolItem("Auto-Optimizer", "Automated system tuning", Icons.Outlined.AutoFixHigh, Screen.Automation.route, Color(0xFFFF0033))
+                ToolItem("System Config", "Advanced device settings", Icons.Default.Settings, Screen.Config.route, Color(0xFF00FF99)),
+                ToolItem("Battery Usage", "Monitor module power drain", Icons.Default.Bolt, Screen.BatteryEstimation.route, Color(0xFFFFD700)),
+                ToolItem("Pre-Reset Guide", "Safely prepare for factory reset", Icons.Outlined.AutoFixHigh, Screen.PreReset.route, Color(0xFFB58900)),
+                ToolItem("Help & Permissions", "App documentation & privacy", Icons.Default.Help, Screen.HelpAndPermissions.route, Color(0xFFE91E63)),
+                ToolItem("Local ADB Client", "Wireless Debugging utilities", Icons.Default.BugReport, Screen.AdbSetup.route, Color(0xFFFFA500)),
+                ToolItem("Command Terminal", "Direct shell access", Icons.Default.Terminal, Screen.Terminal.route, Color(0xFF00D1FF)),
+                ToolItem("Network Health", "DNS & Signal optimization", Icons.Default.NetworkCheck, Screen.Network.route, Color(0xFF00BFFF)),
+                ToolItem("Automation Engine", "Configure auto-optimization", Icons.Outlined.AutoFixHigh, Screen.Automation.route, Color(0xFFFF0033))
             )
 
             LazyVerticalGrid(

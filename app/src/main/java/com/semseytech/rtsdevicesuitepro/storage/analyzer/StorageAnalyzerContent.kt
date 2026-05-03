@@ -4,12 +4,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.semseytech.rtsdevicesuitepro.ui.components.FileViewMode
 
 @Composable
 fun StorageAnalyzerContent(
     padding: PaddingValues,
     uiState: StorageStats,
-    viewMode: ViewMode,
+    viewMode: FileViewMode,
     groupedLargestFiles: Map<String, List<FileInfo>>,
     collapsedGroups: Map<String, Boolean>,
     categoriesCollapsed: Boolean,
@@ -28,7 +29,7 @@ fun StorageAnalyzerContent(
             if (uiState.isScanning) {
                 ScanningOverlay(uiState.scanProgress)
             } else {
-                if (viewMode == ViewMode.LIST) {
+                if (viewMode == FileViewMode.LIST) {
                     StorageAnalyzerListContent(
                         uiState, groupedLargestFiles, collapsedGroups, categoriesCollapsed, onToggleCategories, selectedFiles,
                         isSelectionMode, onNavigateToCategory, onToggleGroup,

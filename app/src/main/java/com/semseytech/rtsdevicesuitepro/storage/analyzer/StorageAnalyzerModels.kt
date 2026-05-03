@@ -1,6 +1,7 @@
 package com.semseytech.rtsdevicesuitepro.storage.analyzer
 
 import android.net.Uri
+import com.semseytech.rtsdevicesuitepro.ui.components.*
 
 data class StorageStats(
     val totalBytes: Long = 0,
@@ -33,25 +34,9 @@ enum class FileCategory {
     IMAGES, VIDEOS, AUDIO, DOCUMENTS, ARCHIVES, APKS, OTHERS
 }
 
-enum class SortOption {
-    NAME, SIZE, DATE_MODIFIED, DATE_CREATED, TYPE, AUTHORS, CATEGORIES, TAGS, TITLE
-}
-
-enum class SortOrder {
-    ASCENDING, DESCENDING
-}
-
-enum class GroupByOption {
-    NONE, NAME, DATE_MODIFIED, DATE_CREATED, FOLDER, TYPE, AUTHOR, TAG, CATEGORY, SIZE
-}
-
-enum class ViewMode {
-    LIST, GRID_SMALL, GRID_MEDIUM, GRID_LARGE
-}
-
 data class DisplaySettings(
-    val sortOption: SortOption = SortOption.SIZE,
-    val sortOrder: SortOrder = SortOrder.DESCENDING,
-    val viewMode: ViewMode = ViewMode.LIST,
-    val groupBy: GroupByOption = GroupByOption.NONE
+    val sortOption: FileSortOption = FileSortOption.SIZE,
+    val sortOrder: FileSortOrder = FileSortOrder.DESCENDING,
+    val viewMode: FileViewMode = FileViewMode.LIST,
+    val groupBy: FileGroupByOption = FileGroupByOption.NONE
 )
