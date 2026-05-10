@@ -1,5 +1,7 @@
 package com.semseytech.rtsdevicesuitepro.archive.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,6 +33,20 @@ fun ArchiveScreen(
             snackbarHostState.showSnackbar(it)
             viewModel.errorMessage = null
         }
+    }
+
+    var pendingArchiveOptions by remember { mutableStateOf<com.semseytech.rtsdevicesuitepro.archive.model.ArchiveOptions?>(null) }
+    var pendingArchiveName by remember { mutableStateOf("") }
+
+    val createArchiveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("*/*")
+    ) { uri ->
+        uri?.let { targetUri ->
+            pendingArchiveOptions?.let { options ->
+                viewModel.addFilesToArchiveUri(targetUri, pendingArchiveName, options)
+            }
+        }
+        pendingArchiveOptions = null
     }
 
     Scaffold(
@@ -124,8 +140,12 @@ fun ArchiveScreen(
         ArchiveDialog(
             initialDir = viewModel.currentDirectory.absolutePath,
             onDismiss = { viewModel.isArchiveDialogOpen = false },
-            onConfirm = { file, options ->
-                viewModel.addFilesToArchive(file, options)
+            onConfirm = { name, options ->
+                pendingArchiveName = name
+                pendingArchiveOptions = options
+                val extension = options.format.extension
+                createArchiveLauncher.launch("$name.$extension")
+                viewModel.isArchiveDialogOpen = false
             }
         )
     }

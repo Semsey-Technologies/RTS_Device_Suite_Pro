@@ -20,3 +20,18 @@ interface SmbDao {
     @Query("SELECT * FROM smb_connections WHERE host = :host LIMIT 1")
     suspend fun getConnectionByHost(host: String): SmbConnection?
 }
+
+@Dao
+interface FavoriteDao {
+    @Query("SELECT * FROM favorites ORDER BY name ASC")
+    fun getAllFavorites(): Flow<List<FavoriteLocation>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFavorite(favorite: FavoriteLocation)
+
+    @Delete
+    suspend fun deleteFavorite(favorite: FavoriteLocation)
+
+    @Query("DELETE FROM favorites WHERE path = :path")
+    suspend fun deleteFavoriteByPath(path: String)
+}

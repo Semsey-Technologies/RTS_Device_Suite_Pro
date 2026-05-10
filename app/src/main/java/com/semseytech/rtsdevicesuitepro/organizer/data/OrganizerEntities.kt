@@ -13,7 +13,7 @@ import com.google.gson.GsonBuilder
 data class OrganizerRuleEntity(
     @PrimaryKey val id: String,
     val name: String,
-    val sourcePath: String,
+    val sourcePathsJson: String, // Store as JSON string list
     val targetPath: String,
     val fileTypesJson: String, // Store as JSON string
     val triggerJson: String,   // Store as JSON string

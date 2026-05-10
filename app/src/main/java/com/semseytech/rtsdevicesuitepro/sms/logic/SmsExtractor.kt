@@ -23,7 +23,7 @@ class SmsExtractor(private val context: Context) {
         val timestamp: Long
     )
 
-    fun extractAll(outputDir: File): List<ManifestEntry> {
+    fun extractAll(outputDir: File, filterThreadIds: Set<String>? = null): List<ManifestEntry> {
         val manifestEntries = mutableListOf<ManifestEntry>()
         val threadsDir = File(outputDir, "data/threads").apply { mkdirs() }
         val mmsDir = File(outputDir, "data/mms").apply { mkdirs() }
@@ -33,10 +33,10 @@ class SmsExtractor(private val context: Context) {
 
         try {
             // 1. Fetch SMS
-            fetchSms(threadsMap, threadInfoMap)
+            fetchSms(threadsMap, threadInfoMap, filterThreadIds)
             
             // 2. Fetch MMS
-            fetchMms(threadsMap, threadInfoMap, mmsDir)
+            fetchMms(threadsMap, threadInfoMap, mmsDir, filterThreadIds)
 
             // 3. Write individual thread JSONs
             threadsMap.forEach { (threadId, messages) ->
@@ -61,8 +61,13 @@ class SmsExtractor(private val context: Context) {
 
     private fun fetchSms(
         threadsMap: MutableMap<String, MutableList<BackupItem.MessageDetail>>,
-        threadInfoMap: MutableMap<String, SmsThread>
+        threadInfoMap: MutableMap<String, SmsThread>,
+        filterThreadIds: Set<String>? = null
     ) {
+        val selection = filterThreadIds?.let { ids ->
+            if (ids.isEmpty()) "0" else "${Telephony.Sms.THREAD_ID} IN (${ids.joinToString(",")})"
+        }
+        
         val cursor: Cursor? = context.contentResolver.query(
             Telephony.Sms.CONTENT_URI,
             arrayOf(
@@ -70,7 +75,7 @@ class SmsExtractor(private val context: Context) {
                 Telephony.Sms.DATE, Telephony.Sms.DATE_SENT, Telephony.Sms.TYPE,
                 Telephony.Sms.READ, Telephony.Sms.THREAD_ID
             ),
-            null, null, Telephony.Sms.DATE + " DESC"
+            selection, null, Telephony.Sms.DATE + " DESC"
         )
 
         cursor?.use {
@@ -111,12 +116,17 @@ class SmsExtractor(private val context: Context) {
     private fun fetchMms(
         threadsMap: MutableMap<String, MutableList<BackupItem.MessageDetail>>,
         threadInfoMap: MutableMap<String, SmsThread>,
-        mmsBaseDir: File
+        mmsBaseDir: File,
+        filterThreadIds: Set<String>? = null
     ) {
+        val selection = filterThreadIds?.let { ids ->
+            if (ids.isEmpty()) "0" else "${Telephony.Mms.THREAD_ID} IN (${ids.joinToString(",")})"
+        }
+
         val cursor = context.contentResolver.query(
             Telephony.Mms.CONTENT_URI,
             arrayOf(Telephony.Mms._ID, Telephony.Mms.DATE, Telephony.Mms.THREAD_ID, Telephony.Mms.MESSAGE_BOX, Telephony.Mms.SUBJECT),
-            null, null, Telephony.Mms.DATE + " DESC"
+            selection, null, Telephony.Mms.DATE + " DESC"
         )
 
         cursor?.use {

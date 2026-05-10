@@ -1,6 +1,7 @@
 package com.semseytech.rtsdevicesuitepro.backup.engine
 
 import android.app.Application
+import android.os.Environment
 import android.util.Log
 import com.google.gson.GsonBuilder
 import com.semseytech.rtsdevicesuitepro.archive.model.ArchiveFormat
@@ -29,7 +30,14 @@ class BackupEngine(private val application: Application) {
             val tempArchive = File(application.cacheDir, "$outputFileName${archiveFormat.extension}")
             
             val manifestEntries = mutableListOf<ManifestEntry>()
-            val includedCategories = selectedItems.map { it.type }.distinct()
+            val includedCategories = selectedItems.map { 
+                when (it.type.lowercase()) {
+                    "audio", "music", "ringtones", "notifications", "alarms" -> "Audio"
+                    "images", "pictures" -> "Pictures"
+                    "videos", "movies" -> "Videos"
+                    else -> it.type
+                }
+            }.distinct()
 
             ArchiveWriter(tempArchive, archiveFormat, compressionLevel).use { writer ->
                 
@@ -38,7 +46,8 @@ class BackupEngine(private val application: Application) {
                 if (smsItems.isNotEmpty()) {
                     onProgress(0.1f, "Extracting SMS/MMS...")
                     val extractor = SmsExtractor(application)
-                    val smsEntries = extractor.extractAll(workingDir)
+                    val threadIds = smsItems.map { it.id }.toSet()
+                    val smsEntries = extractor.extractAll(workingDir, threadIds)
                     
                     // Add extracted files to archive
                     val dataDir = File(workingDir, "data")
@@ -86,14 +95,21 @@ class BackupEngine(private val application: Application) {
                     onProgress(0.6f + (index.toFloat() / files.size * 0.3f), "Archiving: ${userFile.fileName}")
                     val file = File(userFile.path)
                     if (file.exists()) {
-                        val entryPath = "files/${userFile.type}/${file.name}"
+                        // Normalize folder structure: all audio types (Music, Ringtones, etc.) go under 'audio'
+                        val typeLower = userFile.type.lowercase()
+                        val folderName = when (typeLower) {
+                            "music", "audio", "ringtones", "notifications", "alarms" -> "audio"
+                            else -> userFile.type
+                        }
+
+                        val entryPath = "files/$folderName/${file.name}"
                         writer.addFile(file, entryPath)
                         
                         // Map type to category for viewer gallery
-                        val category = when (userFile.type.lowercase()) {
+                        val category = when (typeLower) {
                             "images", "pictures" -> "Pictures"
-                            "videos" -> "Videos"
-                            "audio" -> "Audio"
+                            "videos", "movies" -> "Videos"
+                            "audio", "music", "ringtones", "notifications", "alarms" -> "Audio"
                             "documents" -> "Documents"
                             else -> userFile.type
                         }
@@ -186,25 +202,83 @@ class BackupEngine(private val application: Application) {
         format: ArchiveFormat
     ): File? {
         val finalFileName = "$fileName${format.extension}"
-        return when (destination.type) {
-            BackupDestinationType.INTERNAL -> {
-                val dest = File(application.getExternalFilesDir(null), "backups/$finalFileName")
-                dest.parentFile?.mkdirs()
-                tempFile.renameTo(dest)
-                dest
-            }
-            BackupDestinationType.SD_CARD -> {
-                // Implementation depends on finding SD card path via Environment or SAF
-                tempFile
-            }
-            BackupDestinationType.SAF -> {
-                // Handle SAF upload via content resolver
-                tempFile
-            }
-            else -> {
-                // Cloud uploader placeholder
-                tempFile
+        
+        // If a URI is provided (e.g. via SAF), use it regardless of the destination type label
+        if (!destination.uri.isNullOrEmpty()) {
+            try {
+                val uri = android.net.Uri.parse(destination.uri)
+                application.contentResolver.openOutputStream(uri)?.use { output ->
+                    tempFile.inputStream().use { input ->
+                        input.copyTo(output)
+                    }
+                }
+                tempFile.delete()
+                return File(uri.path ?: finalFileName)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to write to URI destination: ${destination.uri}", e)
+                // Fall through to default behavior if URI write fails
             }
         }
+
+        return try {
+            when (destination.type) {
+                BackupDestinationType.INTERNAL -> {
+                    val baseDir = application.getExternalFilesDir(null) ?: application.filesDir
+                    val dest = File(baseDir, "backups/$finalFileName")
+                    dest.parentFile?.mkdirs()
+                    moveFile(tempFile, dest)
+                }
+                BackupDestinationType.SD_CARD -> {
+                    val dirs = application.getExternalFilesDirs(null)
+                    val sdCardDir = dirs.find { it != null && Environment.isExternalStorageRemovable(it) }
+                    if (sdCardDir != null) {
+                        val dest = File(sdCardDir, "backups/$finalFileName")
+                        dest.parentFile?.mkdirs()
+                        moveFile(tempFile, dest)
+                    } else {
+                        tempFile
+                    }
+                }
+                BackupDestinationType.SAF -> {
+                    destination.uri?.let { uriString ->
+                        val uri = android.net.Uri.parse(uriString)
+                        application.contentResolver.openOutputStream(uri)?.use { output ->
+                            tempFile.inputStream().use { input ->
+                                input.copyTo(output)
+                            }
+                        }
+                        tempFile.delete()
+                        File(uri.path ?: finalFileName)
+                    } ?: tempFile
+                }
+                BackupDestinationType.WEBDAV -> {
+                    val cloudDir = File(application.filesDir, "cloud_sync")
+                    cloudDir.mkdirs()
+                    val dest = File(cloudDir, finalFileName)
+                    moveFile(tempFile, dest)
+                }
+                else -> {
+                    val dest = File(application.filesDir, "backups/$finalFileName")
+                    dest.parentFile?.mkdirs()
+                    moveFile(tempFile, dest)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to move to destination", e)
+            tempFile
+        }
+    }
+
+    private fun moveFile(source: File, dest: File): File {
+        if (source.renameTo(dest)) return dest
+        
+        // If rename fails (e.g. cross-partition), copy and delete
+        source.inputStream().use { input ->
+            dest.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+        source.delete()
+        return dest
     }
 }

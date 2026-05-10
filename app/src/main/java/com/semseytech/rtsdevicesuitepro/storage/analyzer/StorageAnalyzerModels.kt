@@ -27,7 +27,9 @@ data class FileInfo(
     val lastModified: Long = 0,
     val mimeType: String? = null,
     val uri: Uri? = null,
-    val isSelected: Boolean = false
+    val isSelected: Boolean = false,
+    val author: String? = null,
+    val tags: List<String> = emptyList()
 )
 
 enum class FileCategory {

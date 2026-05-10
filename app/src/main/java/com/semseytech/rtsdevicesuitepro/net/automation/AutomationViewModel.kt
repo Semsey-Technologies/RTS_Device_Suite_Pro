@@ -30,6 +30,12 @@ class AutomationViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun saveRule(rule: AutomationRule) {
+        viewModelScope.launch {
+            repository.saveRule(rule)
+        }
+    }
+
     fun removeRule(ruleId: String) {
         viewModelScope.launch {
             repository.removeRule(ruleId)

@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -68,7 +70,7 @@ fun AddRuleDialog(
     onConfirm: (OrganizerRule) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
-    var sourcePath by remember { mutableStateOf("") }
+    var sourcePaths by remember { mutableStateOf(listOf("")) }
     var targetPath by remember { mutableStateOf("") }
     
     val presetCategories = listOf("Audio", "Video", "Image", "Document", "Archive", "Custom")
@@ -106,12 +108,17 @@ fun AddRuleDialog(
         )
     }
 
+    var activePickerIndex by remember { mutableStateOf(-1) }
     val sourcePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
         uri?.let { 
             val resolved = it.toFilePath(context)
-            if (resolved != null) sourcePath = resolved
+            if (resolved != null && activePickerIndex != -1) {
+                val newPaths = sourcePaths.toMutableList()
+                newPaths[activePickerIndex] = resolved
+                sourcePaths = newPaths
+            }
         }
     }
 
@@ -139,15 +146,53 @@ fun AddRuleDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Source Folder
-                PathInputField(
-                    label = "Source Folder",
-                    value = sourcePath,
-                    onValueChange = { sourcePath = it },
-                    onPickClick = { sourcePickerLauncher.launch(null) },
-                    commonFolders = commonFolders,
-                    showDownloadsWarning = true
-                )
+                // Source Folders
+                Text("Source Folders", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                sourcePaths.forEachIndexed { index, path ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            PathInputField(
+                                label = "Source Folder ${index + 1}",
+                                value = path,
+                                onValueChange = { newPath ->
+                                    val newPaths = sourcePaths.toMutableList()
+                                    newPaths[index] = newPath
+                                    sourcePaths = newPaths
+                                },
+                                onPickClick = { 
+                                    activePickerIndex = index
+                                    sourcePickerLauncher.launch(null) 
+                                },
+                                commonFolders = commonFolders,
+                                showDownloadsWarning = index == 0
+                            )
+                        }
+                        if (sourcePaths.size > 1) {
+                            IconButton(
+                                onClick = {
+                                    sourcePaths = sourcePaths.filterIndexed { i, _ -> i != index }
+                                },
+                                modifier = Modifier.padding(top = 16.dp)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Remove Source", tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+                
+                TextButton(
+                    onClick = { sourcePaths = sourcePaths + "" },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("ADD ANOTHER SOURCE")
+                }
+
+                HorizontalDivider()
 
                 // Destination Folder
                 PathInputField(
@@ -157,6 +202,8 @@ fun AddRuleDialog(
                     onPickClick = { targetPickerLauncher.launch(null) },
                     commonFolders = commonFolders
                 )
+
+                HorizontalDivider()
 
                 // File Types
                 ExposedDropdownMenuBox(
@@ -240,10 +287,11 @@ fun AddRuleDialog(
         },
         confirmButton = {
             Button(onClick = {
-                if (name.isNotBlank() && sourcePath.isNotBlank() && targetPath.isNotBlank()) {
+                val validSources = sourcePaths.filter { it.isNotBlank() }
+                if (name.isNotBlank() && validSources.isNotEmpty() && targetPath.isNotBlank()) {
                     onConfirm(OrganizerRule(
                         name = name,
-                        sourcePath = sourcePath,
+                        sourcePaths = validSources,
                         targetPath = targetPath,
                         fileTypes = if (selectedCategory == "Custom") customExtensions.split(",").map { it.trim() } else listOf(selectedCategory.lowercase()),
                         trigger = when (selectedTriggerName) {

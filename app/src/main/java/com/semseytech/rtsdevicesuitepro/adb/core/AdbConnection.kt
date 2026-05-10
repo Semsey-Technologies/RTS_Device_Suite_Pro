@@ -274,7 +274,17 @@ class AdbConnection(
     }
 
     fun close() {
-        socket?.close()
-        isConnected = false
+        try {
+            input?.close()
+            output?.close()
+            socket?.close()
+        } catch (e: Exception) {
+            Log.w(TAG, "Error closing resources: ${e.message}")
+        } finally {
+            input = null
+            output = null
+            socket = null
+            isConnected = false
+        }
     }
 }

@@ -1,5 +1,5 @@
 [versions]
-agp = "9.2.0"
+agp = "9.2.1"
 coreKtx = "1.10.1"
 appcompat = "1.7.1"
 junit = "4.13.2"
@@ -18,8 +18,11 @@ workRuntimeKtx = "2.10.0"
 room = "2.7.0-alpha11"
 datastore = "1.1.2"
 jcifs = "2.1.10"
+soraEditor = "0.23.6"
 
 [libraries]
+sora-editor = { group = "io.github.Rosemoe.sora-editor", name = "editor", version.ref = "soraEditor" }
+sora-language-textmate = { group = "io.github.Rosemoe.sora-editor", name = "language-textmate", version.ref = "soraEditor" }
 jcifs-ng = { group = "eu.agno3.jcifs", name = "jcifs-ng", version.ref = "jcifs" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }

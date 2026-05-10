@@ -107,8 +107,7 @@ fun DashboardScreen(
 
             AutoTasksSection(
                 uiState = uiState,
-                onDailyBackupToggle = { viewModel.toggleDailyBackup(it) },
-                onAutoCleanToggle = { viewModel.toggleAutoClean(it) }
+                onDailyBackupToggle = { viewModel.toggleDailyBackup(it) }
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -425,8 +424,13 @@ fun QuickAccessSection(onNavigate: (String) -> Unit, uiState: DashboardUiState) 
         }
         Spacer(modifier = Modifier.height(12.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            QuickAccessTile("Secure Wipe", Icons.Default.Security, "Wipe Suite", Modifier.weight(1f)) { onNavigate(Screen.WipeSuite.route) }
             QuickAccessTile("System Tools", Icons.Default.Build, "Utilities", Modifier.weight(1f)) { onNavigate(Screen.Tools.route) }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             QuickAccessTile("Automation", Icons.Default.AutoFixHigh, "Rules", Modifier.weight(1f)) { onNavigate(Screen.Automation.route) }
+            QuickAccessTile("Diagnostics", Icons.Default.HealthAndSafety, "Security", Modifier.weight(1f)) { onNavigate(Screen.Diagnostics.route) }
         }
     }
 }
@@ -480,8 +484,7 @@ fun QuickAccessTile(
 @Composable
 fun AutoTasksSection(
     uiState: DashboardUiState,
-    onDailyBackupToggle: (Boolean) -> Unit,
-    onAutoCleanToggle: (Boolean) -> Unit
+    onDailyBackupToggle: (Boolean) -> Unit
 ) {
     val theme = LocalTheme.current
     Column {
@@ -495,18 +498,6 @@ fun AutoTasksSection(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 ToggleRow("Daily Backup", uiState.isDailyBackupEnabled, onDailyBackupToggle)
-                HorizontalDivider(color = theme.accentColor.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 8.dp))
-                Column {
-                    ToggleRow("Auto Clean", uiState.isAutoCleanEnabled, onAutoCleanToggle)
-                    if (uiState.isAutoCleanEnabled) {
-                        Text(
-                            text = uiState.autoCleanSummary,
-                            color = theme.accentColor.copy(alpha = 0.7f),
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
-                        )
-                    }
-                }
             }
         }
     }
@@ -630,8 +621,21 @@ fun MaintenanceSection(uiState: DashboardUiState, onCompleteTask: (String) -> Un
             border = BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.1f))
         ) {
             Column(modifier = Modifier.padding(8.dp)) {
-                uiState.maintenanceTasks.forEach { task ->
-                    MaintenanceItem(task, theme, onCompleteTask)
+                if (uiState.maintenanceTasks.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CheckCircle, null, tint = Color.Green, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("All physical maintenance completed", color = theme.textColor.copy(alpha = 0.6f), fontSize = 12.sp)
+                        }
+                    }
+                } else {
+                    uiState.maintenanceTasks.forEach { task ->
+                        MaintenanceItem(task, theme, onCompleteTask)
+                    }
                 }
             }
         }
@@ -648,13 +652,13 @@ fun MaintenanceItem(task: MaintenanceTask, theme: ThemePreset, onComplete: (Stri
     ) {
         Surface(
             modifier = Modifier.size(32.dp),
-            color = if (task.isDue) Color.Red.copy(alpha = 0.2f) else Color.Green.copy(alpha = 0.1f),
+            color = Color.Red.copy(alpha = 0.2f),
             shape = RoundedCornerShape(8.dp)
         ) {
             Icon(
-                imageVector = if (task.isDue) Icons.Default.PriorityHigh else Icons.Default.Check,
+                imageVector = Icons.Default.PriorityHigh,
                 contentDescription = null,
-                tint = if (task.isDue) Color.Red else Color.Green,
+                tint = Color.Red,
                 modifier = Modifier.padding(8.dp)
             )
         }
@@ -666,18 +670,8 @@ fun MaintenanceItem(task: MaintenanceTask, theme: ThemePreset, onComplete: (Stri
             Text(task.description, color = theme.textColor.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
         }
         
-        if (task.isDue) {
-            TextButton(onClick = { onComplete(task.id) }) {
-                Text("MARK DONE", color = theme.accentColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
-        } else {
-            Text(
-                "COMPLETED",
-                color = Color.Green.copy(alpha = 0.5f),
-                style = MaterialTheme.typography.labelSmall,
-                fontSize = 9.sp,
-                modifier = Modifier.padding(end = 8.dp)
-            )
+        TextButton(onClick = { onComplete(task.id) }) {
+            Text("MARK DONE", color = theme.accentColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

@@ -3,7 +3,6 @@ package com.semseytech.rtsdevicesuitepro.automation.data
 import android.content.Context
 import androidx.room.*
 import com.google.gson.Gson
-import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import com.semseytech.rtsdevicesuitepro.automation.models.*
 
@@ -15,17 +14,26 @@ interface AutomationDao {
     @Query("SELECT * FROM rule_groups")
     suspend fun getAllGroups(): List<RuleGroup>
 
+    @Query("SELECT * FROM flow_graphs")
+    suspend fun getAllFlows(): List<FlowGraphEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRule(rule: RuleEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertGroup(group: RuleGroup)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFlow(flow: FlowGraphEntity)
+
     @Delete
     suspend fun deleteRule(rule: RuleEntity)
 
     @Delete
     suspend fun deleteGroup(group: RuleGroup)
+
+    @Delete
+    suspend fun deleteFlow(flow: FlowGraphEntity)
 
     @Query("UPDATE rules SET isEnabled = :enabled WHERE id = :id")
     suspend fun setRuleEnabled(id: String, enabled: Boolean)
@@ -34,7 +42,7 @@ interface AutomationDao {
     suspend fun updateRuleGroup(ruleId: String, groupId: String?)
 }
 
-@Database(entities = [RuleEntity::class, RuleGroup::class], version = 2, exportSchema = false)
+@Database(entities = [RuleEntity::class, RuleGroup::class, FlowGraphEntity::class], version = 5, exportSchema = false)
 @TypeConverters(AutomationConverters::class)
 abstract class AutomationDatabase : RoomDatabase() {
     abstract fun automationDao(): AutomationDao
@@ -50,7 +58,7 @@ abstract class AutomationDatabase : RoomDatabase() {
                     AutomationDatabase::class.java,
                     "automation_database"
                 )
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration(true)
                     .build()
                 INSTANCE = instance
                 instance
@@ -60,17 +68,20 @@ abstract class AutomationDatabase : RoomDatabase() {
 }
 
 class AutomationConverters {
-    private val gson: Gson = GsonBuilder()
-        .registerTypeAdapter(Trigger::class.java, AutomationTypeAdapter<Trigger>())
-        .registerTypeAdapter(Condition::class.java, AutomationTypeAdapter<Condition>())
-        .registerTypeAdapter(Action::class.java, AutomationTypeAdapter<Action>())
-        .create()
+    private val gson: Gson = AutomationGson.instance
 
     @TypeConverter
-    fun fromTrigger(trigger: Trigger): String = gson.toJson(trigger)
+    fun fromTrigger(trigger: Trigger): String {
+        val json = gson.toJson(trigger)
+        android.util.Log.d("AutomationConverters", "fromTrigger: $json")
+        return json
+    }
 
     @TypeConverter
-    fun toTrigger(json: String): Trigger = gson.fromJson(json, Trigger::class.java)
+    fun toTrigger(json: String): Trigger {
+        android.util.Log.d("AutomationConverters", "toTrigger: $json")
+        return gson.fromJson(json, Trigger::class.java)
+    }
 
     @TypeConverter
     fun fromConditions(conditions: List<Condition>): String = gson.toJson(conditions)

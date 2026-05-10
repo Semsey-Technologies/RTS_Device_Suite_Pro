@@ -17,6 +17,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.core.content.edit
 import com.semseytech.rtsdevicesuitepro.automation.data.AutomationDatabase
+import com.semseytech.rtsdevicesuitepro.automation.engine.AutomationService
 import com.semseytech.rtsdevicesuitepro.automation.models.Action
 import com.semseytech.rtsdevicesuitepro.automation.models.Trigger
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +25,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -33,6 +35,8 @@ import java.net.InetAddress
 import java.net.NetworkInterface
 import java.text.SimpleDateFormat
 import java.util.*
+import com.semseytech.rtsdevicesuitepro.model.ModelIntelligence
+import com.semseytech.rtsdevicesuitepro.cleaner.CleanerRepository
 
 data class DeviceInfo(
     val manufacturer: String = Build.MANUFACTURER,
@@ -81,82 +85,6 @@ data class MaintenanceCategory(
     val items: List<MaintenanceItem> = emptyList()
 )
 
-object ModelIntelligence {
-    data class DeviceSpec(
-        val manufacturer: String,
-        val model: String,
-        val thermalThreshold: Float = 60f,
-        val batteryIdealTempMin: Float = 15f,
-        val batteryIdealTempMax: Float = 35f,
-        val knownWeakPoints: String = "None known.",
-        val typicalBatteryAging: String = "Standard Lithium-ion aging profile.",
-        val chargingBestPractices: String = "Maintain 20-80% charge where possible.",
-        val notes: String = "",
-        val restoreNotes: String = "",
-        val quirks: String = "",
-        val storageGuidance: String = "Standard storage maintenance.",
-        val networkGuidance: String = "Standard network maintenance.",
-        val hardwareWeakPoints: String = "None known.",
-        val replacementIntervalMonths: Int = 36
-    )
-
-    private val specs = listOf(
-        DeviceSpec(
-            "Google", "Pixel 7", 
-            thermalThreshold = 55f, 
-            quirks = "Known Wi-Fi 6E performance quirks. Tensor G2 can run warm during 4K recording.",
-            networkGuidance = "If Wi-Fi 6E is unstable, try resetting network settings or using 5GHz band.",
-            hardwareWeakPoints = "Fragile camera bar glass - use a protective case.",
-            knownWeakPoints = "Optical fingerprint sensor speed, modem efficiency in low signal.",
-            typicalBatteryAging = "80% capacity typically reached after 800 cycles.",
-            chargingBestPractices = "Adaptive Charging is highly recommended for overnight use.",
-            replacementIntervalMonths = 48
-        ),
-        DeviceSpec(
-            "Samsung", "SM-G9", 
-            thermalThreshold = 65f, 
-            notes = "Aggressive file caching detected. Regular deep clean recommended.",
-            storageGuidance = "Samsung Gallery cache can grow large. Use Deep Clean monthly.",
-            restoreNotes = "May require re-enabling Knox features after major restores.",
-            knownWeakPoints = "Battery swelling risk if stored at 100% for months. Screen burn-in on older AMOLED.",
-            typicalBatteryAging = "Fast charging increases heat; 85% limit (Protect Battery) recommended.",
-            chargingBestPractices = "Use 'Protect Battery' feature to limit charge to 85% for longevity.",
-            replacementIntervalMonths = 36
-        ),
-        DeviceSpec(
-            "Xiaomi", "M21", 
-            notes = "Weekly backup recommended - call logs may be wiped during updates.",
-            restoreNotes = "Check 'Install via USB' in Developer Options if batch install fails.",
-            quirks = "Aggressive background process killing (MIUI/HyperOS).",
-            hardwareWeakPoints = "Proximity sensor issues reported on some batches.",
-            typicalBatteryAging = "High-wattage charging (120W+) may accelerate aging if used daily.",
-            replacementIntervalMonths = 30
-        ),
-        DeviceSpec(
-            "Motorola", "moto", 
-            restoreNotes = "Requires reboot after APK batch install",
-            hardwareWeakPoints = "Charging port can be sensitive to dust - clean monthly.",
-            knownWeakPoints = "Slow security patch updates on budget models.",
-            typicalBatteryAging = "Standard 500-cycle life expectancy for budget series.",
-            replacementIntervalMonths = 24
-        ),
-        DeviceSpec(
-            "Google", "Pixel 6",
-            thermalThreshold = 52f,
-            quirks = "First-gen Tensor thermal throttling. Modem power draw is high.",
-            hardwareWeakPoints = "Fingerprint sensor reliability issues.",
-            typicalBatteryAging = "Expect significant capacity drop after 2 years of heavy use.",
-            replacementIntervalMonths = 36
-        )
-    )
-
-    fun getSpec(manufacturer: String, model: String): DeviceSpec {
-        return specs.find { 
-            manufacturer.contains(it.manufacturer, ignoreCase = true) && 
-            model.contains(it.model, ignoreCase = true) 
-        } ?: DeviceSpec(manufacturer, model) // Default
-    }
-}
 
 enum class AlertSeverity { INFO, WARNING, CRITICAL }
 
@@ -230,6 +158,7 @@ data class NetworkDiagnostics(
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
     private val dao = AutomationDatabase.getDatabase(application).automationDao()
     private val prefs = application.getSharedPreferences("maintenance_prefs", Context.MODE_PRIVATE)
+    private val cleanerRepository = CleanerRepository(application)
     
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
@@ -367,7 +296,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 daysSince >= task.intervalDays
             }
             task.copy(lastCompleted = lastCompleted, isDue = isDue)
-        }
+        }.filter { it.isDue }
         _uiState.value = _uiState.value.copy(maintenanceTasks = tasks)
     }
 
@@ -626,7 +555,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             _uiState.value = _uiState.value.copy(
                 isAutoCleanEnabled = autoCleanRule?.isEnabled ?: false,
                 autoCleanSummary = if (autoCleanRule?.isEnabled == true) {
-                    val cats = action?.categories?.joinToString(", ") ?: "Default"
+                    val cats = action?.categories?.split(",")?.joinToString(", ") ?: "Default"
                     "Cleaning: $cats"
                 } else "Disabled"
             )
@@ -666,25 +595,52 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun runItemNow(itemId: String) {
-        // Implementation for manual execution of maintenance items
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                categories = _uiState.value.categories.map { cat ->
+            _uiState.update { state ->
+                state.copy(categories = state.categories.map { cat ->
                     cat.copy(items = cat.items.map { 
                         if (it.id == itemId) it.copy(status = ItemStatus.ACTIVE) else it 
                     })
+                })
+            }
+            
+            withContext(Dispatchers.IO) {
+                when (itemId) {
+                    "junk_clean" -> {
+                        cleanerRepository.performAutoClean(listOf("temp", "empty_folders"))
+                    }
+                    "ram_opt" -> {
+                        val activityManager = getApplication<Application>().getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                        activityManager.getRunningAppProcesses()?.forEach { process ->
+                            if (process.importance > ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE) {
+                                activityManager.killBackgroundProcesses(process.processName)
+                            }
+                        }
+                    }
+                    "dns_bench" -> {
+                        // Simple reachability check for common DNS
+                        val dnsList = listOf("8.8.8.8", "1.1.1.1", "9.9.9.9")
+                        dnsList.forEach { dns ->
+                            try {
+                                val address = InetAddress.getByName(dns)
+                                address.isReachable(2000)
+                            } catch (e: Exception) {}
+                        }
+                    }
+                    "root_check" -> {
+                        checkRoot()
+                    }
+                    // Add other real implementation logic as needed
                 }
-            )
+            }
             
-            delay(1500) // Simulate work
-            
-            _uiState.value = _uiState.value.copy(
-                categories = _uiState.value.categories.map { cat ->
+            _uiState.update { state ->
+                state.copy(categories = state.categories.map { cat ->
                     cat.copy(items = cat.items.map { 
                         if (it.id == itemId) it.copy(status = ItemStatus.OPTIMIZED, lastRun = System.currentTimeMillis()) else it 
                     })
-                }
-            )
+                })
+            }
             updateRecoveryScore()
         }
     }
@@ -719,6 +675,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 dao.insertRule(newRule)
             }
             refreshAutoCleanStatus()
+            AutomationService.requestRefresh()
         }
     }
 

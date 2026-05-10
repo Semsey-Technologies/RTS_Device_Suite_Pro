@@ -31,7 +31,8 @@ fun AutomationEngineScreen(
     val settings by viewModel.settings.collectAsState()
     val currentTheme = LocalTheme.current
     val scale = ThemeManager.uiScale
-    var showAddRuleDialog by remember { mutableStateOf(false) }
+    var showRuleEditor by remember { mutableStateOf<AutomationRule?>(null) }
+    var isCreatingNew by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -51,7 +52,7 @@ fun AutomationEngineScreen(
                     IconButton(onClick = onNavigateToControls) {
                         Icon(Icons.Default.SettingsSuggest, contentDescription = "Quick Toggles", tint = currentTheme.textColor)
                     }
-                    IconButton(onClick = { showAddRuleDialog = true }) {
+                    IconButton(onClick = { isCreatingNew = true }) {
                         Icon(Icons.Default.Add, contentDescription = "Add Rule", tint = currentTheme.accentColor)
                     }
                 },
@@ -92,6 +93,7 @@ fun AutomationEngineScreen(
                             accentColor = currentTheme.accentColor,
                             scale = scale,
                             onToggle = { viewModel.toggleRule(rule.id, it) },
+                            onEdit = { showRuleEditor = rule },
                             onDelete = { viewModel.removeRule(rule.id) }
                         )
                     }
@@ -100,13 +102,25 @@ fun AutomationEngineScreen(
         }
     }
 
-    if (showAddRuleDialog) {
-        AddRuleDialog(
+    if (isCreatingNew) {
+        RuleEditorDialog(
             currentTheme = currentTheme,
-            onDismiss = { showAddRuleDialog = false },
-            onAdd = { rule ->
+            onDismiss = { isCreatingNew = false },
+            onSave = { rule ->
                 viewModel.addRule(rule)
-                showAddRuleDialog = false
+                isCreatingNew = false
+            }
+        )
+    }
+
+    if (showRuleEditor != null) {
+        RuleEditorDialog(
+            rule = showRuleEditor,
+            currentTheme = currentTheme,
+            onDismiss = { showRuleEditor = null },
+            onSave = { rule ->
+                viewModel.saveRule(rule)
+                showRuleEditor = null
             }
         )
     }
@@ -118,8 +132,11 @@ fun RuleCard(
     accentColor: Color,
     scale: Float,
     onToggle: (Boolean) -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth().border(1.dp, accentColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp * scale)),
         colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f))
@@ -152,9 +169,29 @@ fun RuleCard(
                     onCheckedChange = onToggle,
                     colors = SwitchDefaults.colors(checkedThumbColor = accentColor)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, "Delete", tint = Color.Red.copy(alpha = 0.5f), modifier = Modifier.size(20.dp))
+                
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = Color.White.copy(alpha = 0.5f))
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Edit") },
+                            onClick = {
+                                onEdit()
+                                showMenu = false
+                            },
+                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete", color = Color.Red) },
+                            onClick = {
+                                onDelete()
+                                showMenu = false
+                            },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red) }
+                        )
+                    }
                 }
             }
         }
@@ -163,21 +200,25 @@ fun RuleCard(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddRuleDialog(
+fun RuleEditorDialog(
+    rule: AutomationRule? = null,
     currentTheme: com.semseytech.rtsdevicesuitepro.ui.theme.ThemePreset,
     onDismiss: () -> Unit,
-    onAdd: (AutomationRule) -> Unit
+    onSave: (AutomationRule) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var condition by remember { mutableStateOf(ConditionType.LATENCY_ABOVE) }
-    var conditionValue by remember { mutableStateOf("") }
-    var action by remember { mutableStateOf(ActionType.NOTIFY_USER) }
-    var selectedAudioChannel by remember { mutableStateOf(AudioChannel.MEDIA) }
+    var name by remember { mutableStateOf(rule?.name ?: "") }
+    var condition by remember { mutableStateOf(rule?.conditionType ?: ConditionType.LATENCY_ABOVE) }
+    var conditionValue by remember { mutableStateOf(rule?.conditionValue ?: "") }
+    var action by remember { mutableStateOf(rule?.actionType ?: ActionType.NOTIFY_USER) }
+    var selectedAudioChannel by remember { mutableStateOf(rule?.audioChannel ?: AudioChannel.MEDIA) }
 
     var showTimePicker by remember { mutableStateOf(false) }
 
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState()
+        val timePickerState = rememberTimePickerState(
+            initialHour = if (conditionValue.contains(":")) conditionValue.split(":")[0].toInt() else 0,
+            initialMinute = if (conditionValue.contains(":")) conditionValue.split(":")[1].toInt() else 0
+        )
         AlertDialog(
             onDismissRequest = { showTimePicker = false },
             confirmButton = {
@@ -198,7 +239,7 @@ fun AddRuleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create New Rule", color = currentTheme.accentColor) },
+        title = { Text(if (rule == null) "Create New Rule" else "Edit Rule", color = currentTheme.accentColor) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
@@ -262,17 +303,17 @@ fun AddRuleDialog(
         },
         confirmButton = {
             Button(onClick = { 
-                onAdd(AutomationRule(
-                    id = UUID.randomUUID().toString(),
+                onSave(AutomationRule(
+                    id = rule?.id ?: UUID.randomUUID().toString(),
                     name = name,
                     conditionType = condition,
                     conditionValue = conditionValue,
                     actionType = action,
                     audioChannel = selectedAudioChannel,
-                    isEnabled = true
+                    isEnabled = rule?.isEnabled ?: true
                 ))
             }, enabled = name.isNotBlank() && conditionValue.isNotBlank()) {
-                Text("Create")
+                Text(if (rule == null) "Create" else "Save")
             }
         },
         dismissButton = {

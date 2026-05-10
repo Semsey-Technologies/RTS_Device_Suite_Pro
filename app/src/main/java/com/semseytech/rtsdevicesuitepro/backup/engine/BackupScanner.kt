@@ -68,23 +68,26 @@ class BackupScanner(private val application: Application) {
             val dateIdx = it.getColumnIndex(CallLog.Calls.DATE)
             val typeIdx = it.getColumnIndex(CallLog.Calls.TYPE)
             val durIdx = it.getColumnIndex(CallLog.Calls.DURATION)
-            val idIdx = it.getColumnIndex(CallLog.Calls._ID)
             
-            while (it.moveToNext() && it.position < 500) {
+            while (it.moveToNext() && it.position < 1000) {
                 val num = it.getString(numIdx) ?: "Unknown"
                 val date = it.getLong(dateIdx)
                 val dur = it.getLong(durIdx)
                 val type = it.getInt(typeIdx)
-                val id = it.getString(idIdx) ?: it.position.toString()
+                // Use a composite ID that is stable across different backups of the same call
+                val stableId = "${num}_${date}_${type}"
                 
+                // Avoid duplicates in the same scan
+                if (list.any { it.id == stableId }) continue
+
                 list.add(BackupItem.CallLogEntry(
-                    id = id,
+                    id = stableId,
                     number = num,
                     latestType = type.toString(),
                     date = date,
                     totalDuration = dur,
                     size = 100L,
-                    calls = listOf(BackupItem.CallDetail(id, type, date, dur))
+                    calls = listOf(BackupItem.CallDetail(stableId, type, date, dur))
                 ))
             }
         }
@@ -181,6 +184,8 @@ class BackupScanner(private val application: Application) {
             "Audio" -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
             "Music" -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
             "Movies" -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+            "Podcasts" -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PODCASTS)
+            "DCIM" -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)
             "Documents" -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
             "Downloads" -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             "Ringtones" -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RINGTONES)

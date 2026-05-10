@@ -11,3 +11,11 @@ data class SmbConnection(
     val pass: String = "",
     val lastConnected: Long = System.currentTimeMillis()
 )
+
+@Entity(tableName = "favorites")
+data class FavoriteLocation(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val name: String,
+    val path: String,
+    val type: String // "LOCAL", "SMB", etc.
+)

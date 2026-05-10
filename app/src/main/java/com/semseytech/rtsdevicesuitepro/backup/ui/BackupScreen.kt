@@ -83,6 +83,33 @@ fun BackupScreen(
         }
     }
 
+    var pendingDestType by remember { mutableStateOf<BackupDestinationType?>(null) }
+    var startBackupAfterPicker by remember { mutableStateOf(false) }
+
+    val safLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("*/*")
+    ) { uri ->
+        uri?.let {
+            val type = pendingDestType ?: BackupDestinationType.SAF
+            viewModel.setDestination(BackupDestination(
+                type = type,
+                displayName = "Selected ${type.name.replace("_", " ")}",
+                uri = it.toString()
+            ))
+            
+            if (startBackupAfterPicker) {
+                viewModel.startBackup { message ->
+                    scope.launch {
+                        snackbarHostState.showSnackbar(message)
+                    }
+                }
+                showArchiveOptions = false
+            }
+        }
+        pendingDestType = null
+        startBackupAfterPicker = false
+    }
+
     val saveFileLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("*/*")
     ) { uri ->
@@ -159,6 +186,28 @@ fun BackupScreen(
                         )
                     }
 
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Master Selection",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Button(
+                                onClick = { viewModel.toggleMasterSelection() },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (uiState.isMasterSelected) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
+                                )
+                            ) {
+                                Text(if (uiState.isMasterSelected) "Deselect All" else "Select All")
+                            }
+                        }
+                    }
+
                     val groupedCategories = uiState.categories.groupBy { it.parentCategory ?: "Other" }
                     groupedCategories.forEach { (parent, categories) ->
                         item {
@@ -201,12 +250,33 @@ fun BackupScreen(
                 onCompressionLevelChanged = { viewModel.setCompressionLevel(it) },
                 onFileNameChanged = { viewModel.setOutputFileName(it) },
                 onDestinationSelected = { viewModel.setDestination(it) },
+                onLaunchSAF = { type ->
+                    pendingDestType = type
+                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                    val name = uiState.outputFileName.ifEmpty { "RTS_Backup_$timestamp" }
+                    val extension = uiState.selectedArchiveType.extension
+                    safLauncher.launch("$name$extension")
+                },
                 onDismiss = { showArchiveOptions = false },
                 onConfirm = {
-                    showArchiveOptions = false
-                    viewModel.startBackup { message ->
-                        scope.launch {
-                            snackbarHostState.showSnackbar(message)
+                    val dest = uiState.selectedDestination
+                    val requiresPicker = dest.type != BackupDestinationType.WEBDAV && 
+                                         dest.type != BackupDestinationType.DROPBOX &&
+                                         dest.type != BackupDestinationType.MEGA
+                    
+                    if (requiresPicker && dest.uri == null) {
+                        startBackupAfterPicker = true
+                        pendingDestType = dest.type
+                        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                        val name = uiState.outputFileName.ifEmpty { "RTS_Backup_$timestamp" }
+                        val extension = uiState.selectedArchiveType.extension
+                        safLauncher.launch("$name$extension")
+                    } else {
+                        showArchiveOptions = false
+                        viewModel.startBackup { message ->
+                            scope.launch {
+                                snackbarHostState.showSnackbar(message)
+                            }
                         }
                     }
                 }
@@ -223,6 +293,7 @@ fun AdvancedArchiveDialog(
     onCompressionLevelChanged: (Int) -> Unit,
     onFileNameChanged: (String) -> Unit,
     onDestinationSelected: (BackupDestination) -> Unit,
+    onLaunchSAF: (BackupDestinationType) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
@@ -263,15 +334,38 @@ fun AdvancedArchiveDialog(
                 Spacer(Modifier.height(16.dp))
                 Text("Destination:", style = MaterialTheme.typography.labelLarge)
                 BackupDestinationType.values().forEach { destType ->
+                    val requiresPicker = destType != BackupDestinationType.WEBDAV && 
+                                         destType != BackupDestinationType.DROPBOX &&
+                                         destType != BackupDestinationType.MEGA
+                    
+                    val isSelected = uiState.selectedDestination.type == destType
+                    
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onDestinationSelected(BackupDestination(destType, destType.name)) }
+                            .clickable { 
+                                onDestinationSelected(BackupDestination(destType, destType.name))
+                            }
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        RadioButton(selected = uiState.selectedDestination.type == destType, onClick = { onDestinationSelected(BackupDestination(destType, destType.name)) })
-                        Text(destType.name.replace("_", " "), modifier = Modifier.padding(start = 8.dp))
+                        RadioButton(
+                            selected = isSelected, 
+                            onClick = { 
+                                onDestinationSelected(BackupDestination(destType, destType.name))
+                            }
+                        )
+                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                            Text(destType.name.replace("_", " "))
+                            if (isSelected && uiState.selectedDestination.uri != null) {
+                                Text(
+                                    "URI: ${uiState.selectedDestination.uri}", 
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1
+                                )
+                            }
+                        }
                     }
                 }
             }

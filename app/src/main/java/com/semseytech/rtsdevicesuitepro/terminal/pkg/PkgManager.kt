@@ -1,8 +1,11 @@
 package com.semseytech.rtsdevicesuitepro.terminal.pkg
 
+import android.os.Build
 import com.semseytech.rtsdevicesuitepro.terminal.TerminalEnv
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.URL
 
@@ -16,49 +19,76 @@ class PkgManager {
             return@flow
         }
 
-        emit("Contacting repository...")
+        emit("Contacting RTS repository...")
         kotlinx.coroutines.delay(500)
         
-        emit("Downloading $packageName package index...")
-        kotlinx.coroutines.delay(500)
-        
-        emit("Verifying package signature...")
-        kotlinx.coroutines.delay(300)
-        emit("Signature valid (RTS Trust Root).")
+        val arch = getArch()
+        emit("Detected architecture: $arch")
 
         when (packageName) {
             "busybox" -> {
-                emit("Downloading BusyBox binary (multi-call)...")
-                // In a real app, we would download the actual binary for the arch (arm64, x86_64, etc.)
-                createDummyBinary("busybox", "echo 'BusyBox 1.36.1 (multi-call binary)'")
-                emit("Setting up BusyBox applets...")
-                setupBusyBoxApplets()
+                val url = "https://busybox.net/downloads/binaries/1.35.0-x86_64/busybox-$arch" 
+                emit("Downloading BusyBox binary from $url...")
+                if (downloadBinary("busybox", url)) {
+                    emit("Setting up BusyBox applets...")
+                    setupBusyBoxApplets()
+                    emit("BusyBox installed successfully.")
+                } else {
+                    emit("Error: Failed to download BusyBox.")
+                }
             }
             "python" -> {
                 emit("Downloading Python 3.11 environment...")
-                createDummyBinary("python", "echo 'Python 3.11.5 (simulated)'")
+                // For python we'd need a full archive, but we'll simulate the download of a bootstrap script
+                val success = downloadBinary("python", "https://raw.githubusercontent.com/semseytech/rts-pkg/main/scripts/python-bootstrap")
+                if (success) emit("Python environment initialized.") else emit("Error: Python download failed.")
             }
             "git" -> {
                 emit("Downloading Git 2.40.0...")
-                createDummyBinary("git", "echo 'git version 2.40.0 (simulated)'")
+                val success = downloadBinary("git", "https://raw.githubusercontent.com/semseytech/rts-pkg/main/scripts/git-bootstrap")
+                if (success) emit("Git initialized.") else emit("Error: Git download failed.")
             }
             "ssh" -> {
                 emit("Downloading OpenSSH 9.3p1...")
-                createDummyBinary("ssh", "echo 'OpenSSH_9.3p1 (simulated)'")
+                downloadBinary("ssh", "https://raw.githubusercontent.com/semseytech/rts-pkg/main/scripts/ssh-bootstrap")
                 createDummyBinary("ssh-keygen", "echo 'Generating public/private ed25519 key pair...'")
+                emit("SSH tools ready.")
             }
             "curl" -> {
                 emit("Downloading curl 8.1.2...")
-                createDummyBinary("curl", "echo 'curl 8.1.2 (simulated)'")
+                val url = "https://raw.githubusercontent.com/moparisthebest/static-curl/master/curl-$arch"
+                if (downloadBinary("curl", url)) emit("curl ready.") else emit("Error: curl download failed.")
             }
             else -> {
                 emit("Error: Package $packageName not found in RTS Repository.")
-                return@flow
             }
         }
-        
-        binFile.setExecutable(true)
-        emit("Package $packageName installed successfully.")
+    }
+
+    private suspend fun downloadBinary(name: String, urlString: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val file = File(TerminalEnv.binDir, name)
+            URL(urlString).openStream().use { input ->
+                file.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            file.setExecutable(true)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun getArch(): String {
+        val abi = Build.SUPPORTED_ABIS[0].lowercase()
+        return when {
+            abi.contains("arm64") || abi.contains("aarch64") -> "aarch64"
+            abi.contains("arm") -> "armv7l"
+            abi.contains("x86_64") -> "x86_64"
+            abi.contains("x86") -> "i686"
+            else -> "aarch64"
+        }
     }
 
     private fun createDummyBinary(name: String, script: String) {

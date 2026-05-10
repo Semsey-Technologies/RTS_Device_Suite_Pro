@@ -1,14 +1,15 @@
 package com.semseytech.rtsdevicesuitepro.archive.logic
 
+import android.app.Application
 import androidx.compose.runtime.*
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.semseytech.rtsdevicesuitepro.archive.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
 
-class ArchiveViewModel : ViewModel() {
+class ArchiveViewModel(application: Application) : AndroidViewModel(application) {
     var currentDirectory by mutableStateOf(File("/sdcard"))
     var fileItems by mutableStateOf(listOf<FileItem>())
     var selectedFiles = mutableStateListOf<File>()
@@ -95,6 +96,34 @@ class ArchiveViewModel : ViewModel() {
             errorMessage = null
             try {
                 ArchiveManager.createArchive(selectedFiles.toList(), outputFile, options)
+                isArchiveDialogOpen = false
+                selectedFiles.clear()
+                refreshFiles()
+            } catch (e: Exception) {
+                errorMessage = "Archive creation failed: ${e.localizedMessage}"
+            } finally {
+                isProcessing = false
+            }
+        }
+    }
+
+    fun addFilesToArchiveUri(targetUri: android.net.Uri, name: String, options: ArchiveOptions) {
+        viewModelScope.launch(Dispatchers.IO) {
+            isProcessing = true
+            errorMessage = null
+            try {
+                val tempFile = File.createTempFile("archive_gen", ".tmp")
+                ArchiveManager.createArchive(selectedFiles.toList(), tempFile, options)
+                
+                // Copy to URI
+                val context = (getApplication() as android.app.Application)
+                context.contentResolver.openOutputStream(targetUri)?.use { output ->
+                    tempFile.inputStream().use { input ->
+                        input.copyTo(output)
+                    }
+                }
+                tempFile.delete()
+
                 isArchiveDialogOpen = false
                 selectedFiles.clear()
                 refreshFiles()

@@ -65,6 +65,8 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation(libs.sora.editor)
+    implementation(libs.sora.language.textmate)
     implementation(libs.jcifs.ng)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

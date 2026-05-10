@@ -9,7 +9,7 @@ import java.time.LocalTime
 data class OrganizerRule(
     val id: String = java.util.UUID.randomUUID().toString(),
     val name: String,
-    val sourcePath: String,
+    val sourcePaths: List<String>,
     val targetPath: String,
     val fileTypes: List<String>, // e.g., ["mp3", "wav"] or ["audio"]
     val trigger: RuleTrigger,

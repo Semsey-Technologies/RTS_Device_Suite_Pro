@@ -8,6 +8,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.work.*
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.semseytech.rtsdevicesuitepro.automation.data.AutomationGson
+import com.semseytech.rtsdevicesuitepro.automation.models.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.concurrent.TimeUnit
@@ -15,7 +17,7 @@ import java.util.concurrent.TimeUnit
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "automation_settings")
 
 class AutomationRepository(private val context: Context) {
-    private val gson = Gson()
+    private val gson = AutomationGson.instance
 
     val settingsFlow: Flow<AutomationSettings> = context.dataStore.data.map { preferences ->
         val rulesJson = preferences[AutomationPreferencesKeys.RULES_JSON] ?: "[]"
@@ -41,6 +43,21 @@ class AutomationRepository(private val context: Context) {
             val type = object : TypeToken<List<AutomationRule>>() {}.type
             val currentRules: MutableList<AutomationRule> = gson.fromJson<List<AutomationRule>>(currentJson, type).toMutableList()
             currentRules.add(rule)
+            preferences[AutomationPreferencesKeys.RULES_JSON] = gson.toJson(currentRules)
+        }
+    }
+
+    suspend fun saveRule(rule: AutomationRule) {
+        context.dataStore.edit { preferences ->
+            val currentJson = preferences[AutomationPreferencesKeys.RULES_JSON] ?: "[]"
+            val type = object : TypeToken<List<AutomationRule>>() {}.type
+            val currentRules: MutableList<AutomationRule> = gson.fromJson<List<AutomationRule>>(currentJson, type).toMutableList()
+            val index = currentRules.indexOfFirst { it.id == rule.id }
+            if (index != -1) {
+                currentRules[index] = rule
+            } else {
+                currentRules.add(rule)
+            }
             preferences[AutomationPreferencesKeys.RULES_JSON] = gson.toJson(currentRules)
         }
     }

@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.semseytech.rtsdevicesuitepro.automation.ui.AutoCleanDialog
+import com.semseytech.rtsdevicesuitepro.ui.components.DashboardHeader
 import com.semseytech.rtsdevicesuitepro.ui.components.FileDisplaySettings
 import com.semseytech.rtsdevicesuitepro.ui.components.FileViewMode
 import com.semseytech.rtsdevicesuitepro.ui.theme.LocalTheme
@@ -55,45 +57,78 @@ fun CleanerScreen(
     val showViewMenu by viewModel.showViewMenu.collectAsState()
     val showGroupMenu by viewModel.showGroupMenu.collectAsState()
     val scale = ThemeManager.uiScale
+    var showAutoCleanDialog by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("CLEANER & MAINTENANCE", style = MaterialTheme.typography.titleMedium, color = currentTheme.accentColor) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = currentTheme.accentColor)
-                    }
-                },
-                actions = {
-                    if (state == CleanerState.IDLE || state == CleanerState.READY_TO_CLEAN) {
-                        IconButton(onClick = { viewModel.refreshScan() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = currentTheme.accentColor)
-                        }
-                        CleanerMenus(
-                            showSortMenu = showSortMenu,
-                            onSortMenuToggle = { viewModel.setShowSortMenu(it) },
-                            showViewMenu = showViewMenu,
-                            onViewMenuToggle = { viewModel.setShowViewMenu(it) },
-                            showGroupMenu = showGroupMenu,
-                            onGroupMenuToggle = { viewModel.setShowGroupMenu(it) },
-                            displaySettings = displaySettings,
-                            onSettingsChanged = { viewModel.updateDisplaySettings(it) }
-                        )
-                        TextButton(onClick = { viewModel.setAllSelection(true) }) {
-                            Text("Select All", color = currentTheme.accentColor)
-                        }
-                        TextButton(onClick = { viewModel.setAllSelection(false) }) {
-                            Text("Clear", color = currentTheme.accentColor)
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black.copy(alpha = 0.5f))
+    // Start initial scan when screen is first opened
+    LaunchedEffect(Unit) {
+        viewModel.startScan()
+    }
+
+    Column(modifier = Modifier.fillMaxSize().background(currentTheme.startColor)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = currentTheme.accentColor)
+            }
+            Text(
+                "CLEANER & MAINTENANCE",
+                style = MaterialTheme.typography.titleMedium,
+                color = currentTheme.accentColor,
+                fontWeight = FontWeight.Bold
             )
-        },
-        containerColor = currentTheme.startColor
-    ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        }
+
+        if (state == CleanerState.IDLE || state == CleanerState.READY_TO_CLEAN) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Automatic Button
+                Button(
+                    onClick = { showAutoCleanDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = currentTheme.accentColor.copy(alpha = 0.2f)),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, currentTheme.accentColor.copy(alpha = 0.5f))
+                ) {
+                    Icon(Icons.Default.Schedule, null, tint = currentTheme.accentColor, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Automatic", color = currentTheme.accentColor, style = MaterialTheme.typography.labelMedium)
+                }
+
+                // Standard Menu Actions
+                CleanerMenus(
+                    showSortMenu = showSortMenu,
+                    onSortMenuToggle = { viewModel.setShowSortMenu(it) },
+                    showViewMenu = showViewMenu,
+                    onViewMenuToggle = { viewModel.setShowViewMenu(it) },
+                    showGroupMenu = showGroupMenu,
+                    onGroupMenuToggle = { viewModel.setShowGroupMenu(it) },
+                    displaySettings = displaySettings,
+                    onSettingsChanged = { viewModel.updateDisplaySettings(it) }
+                )
+
+                TextButton(onClick = { viewModel.setAllSelection(true) }) {
+                    Text("Select All", color = currentTheme.accentColor, style = MaterialTheme.typography.labelMedium)
+                }
+                TextButton(onClick = { viewModel.setAllSelection(false) }) {
+                    Text("Clear", color = currentTheme.accentColor, style = MaterialTheme.typography.labelMedium)
+                }
+                IconButton(onClick = { viewModel.refreshScan() }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = currentTheme.accentColor, modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+
+        Box(modifier = Modifier.weight(1f)) {
             when (state) {
                 CleanerState.IDLE, CleanerState.READY_TO_CLEAN -> {
                     CleanerSetupContent(
@@ -139,6 +174,14 @@ fun CleanerScreen(
                 else -> {}
             }
         }
+    }
+
+    if (showAutoCleanDialog) {
+        val automationViewModel: com.semseytech.rtsdevicesuitepro.automation.ui.AutomationViewModel = viewModel()
+        AutoCleanDialog(
+            onDismiss = { showAutoCleanDialog = false },
+            viewModel = automationViewModel
+        )
     }
 }
 

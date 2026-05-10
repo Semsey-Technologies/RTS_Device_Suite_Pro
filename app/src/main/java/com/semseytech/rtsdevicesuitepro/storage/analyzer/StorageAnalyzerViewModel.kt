@@ -178,9 +178,9 @@ class StorageAnalyzerViewModel(application: Application, private val repository:
             FileSortOption.DATE_MODIFIED -> compareBy<FileInfo> { it.lastModified }
             FileSortOption.DATE_CREATED -> compareBy<FileInfo> { it.lastModified } // Metadata not always available, falling back to lastModified
             FileSortOption.TYPE -> compareBy<FileInfo> { it.path.substringAfterLast('.', "").lowercase() }
-            FileSortOption.AUTHORS -> compareBy<FileInfo> { "" } 
+            FileSortOption.AUTHORS -> compareBy<FileInfo> { it.author?.lowercase() ?: "zzzz" } 
             FileSortOption.CATEGORIES -> compareBy<FileInfo> { it.category.name }
-            FileSortOption.TAGS -> compareBy<FileInfo> { "" }
+            FileSortOption.TAGS -> compareBy<FileInfo> { it.tags.joinToString(",").lowercase() }
             FileSortOption.TITLE -> compareBy<FileInfo> { it.name }
             else -> compareBy<FileInfo> { it.size }
         }
@@ -214,8 +214,8 @@ class StorageAnalyzerViewModel(application: Application, private val repository:
             }
             FileGroupByOption.FOLDER -> files.groupBy { it.path.substringBeforeLast('/', "Root") }
             FileGroupByOption.TYPE -> files.groupBy { it.path.substringAfterLast('.', "Unknown").uppercase() }
-            FileGroupByOption.AUTHOR -> files.groupBy { "Unknown Author" }
-            FileGroupByOption.TAG -> files.groupBy { "No Tags" }
+            FileGroupByOption.AUTHOR -> files.groupBy { it.author ?: "Unknown Author" }
+            FileGroupByOption.TAG -> files.groupBy { if (it.tags.isEmpty()) "No Tags" else it.tags.first() }
             FileGroupByOption.CATEGORY -> files.groupBy { it.category.name }
             FileGroupByOption.SIZE -> files.groupBy { file ->
                 val mb = file.size / (1024 * 1024)

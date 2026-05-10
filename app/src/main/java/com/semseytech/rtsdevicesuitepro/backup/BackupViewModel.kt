@@ -31,26 +31,44 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
             _uiState.update { it.copy(isLoading = true, backupStatus = "Scanning device...") }
             val categories = mutableListOf<BackupCategory>()
 
-            try {
-                // Communication Data
-                categories.add(BackupCategory("sms", "SMS/MMS Threads", scanner.scanSmsThreads(), parentCategory = "Communication"))
-                categories.add(BackupCategory("calls", "Call Logs", scanner.scanCallLogs(), parentCategory = "Communication"))
-                categories.add(BackupCategory("contacts", "Contacts", scanner.scanContacts(), parentCategory = "Communication"))
-                
-                // App Data
-                categories.add(BackupCategory("apks", "Installed APKs", scanner.scanApks(), parentCategory = "Apps"))
-                
-                // User Files
-                listOf("Pictures", "Videos", "Audio", "Music", "Movies", "Documents", "Downloads", "Ringtones", "Notifications", "Alarms").forEach {
-                    categories.add(BackupCategory(it.lowercase(), it, scanner.scanUserFiles(it), parentCategory = "User Files"))
+            // Helper to safely add categories
+            fun safeAdd(id: String, name: String, scanFunc: () -> List<BackupItem>, parent: String) {
+                try {
+                    val items = scanFunc()
+                    categories.add(BackupCategory(id, name, items, parentCategory = parent))
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error scanning $id", e)
                 }
-                
-                // System Settings
-                categories.add(BackupCategory("settings", "System Settings", scanner.scanSystemSettings(), parentCategory = "System"))
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Error loading data", e)
             }
+
+            // Communication Data
+            safeAdd("sms", "SMS/MMS Threads", { scanner.scanSmsThreads() }, "Communication")
+            safeAdd("calls", "Call Logs", { scanner.scanCallLogs() }, "Communication")
+            safeAdd("contacts", "Contacts", { scanner.scanContacts() }, "Communication")
+            
+            // App Data
+            safeAdd("apks", "Installed APKs", { scanner.scanApks() }, "Apps")
+            
+            // User Files
+            safeAdd("pictures", "Pictures", { scanner.scanUserFiles("Pictures") }, "User Files")
+            
+            safeAdd("videos", "Videos", { 
+                (scanner.scanUserFiles("Videos") + scanner.scanUserFiles("Movies")).distinctBy { it.id }
+            }, "User Files")
+            
+            safeAdd("audio", "Audio", { 
+                (scanner.scanUserFiles("Audio") + 
+                scanner.scanUserFiles("Music") + 
+                scanner.scanUserFiles("Ringtones") + 
+                scanner.scanUserFiles("Notifications") + 
+                scanner.scanUserFiles("Alarms")).distinctBy { it.id }
+            }, "User Files")
+            
+            safeAdd("documents", "Documents", { scanner.scanUserFiles("Documents") }, "User Files")
+            safeAdd("downloads", "Downloads", { scanner.scanUserFiles("Downloads") }, "User Files")
+            
+            // System Settings
+            safeAdd("settings", "System Settings", { scanner.scanSystemSettings() }, "System")
 
             _uiState.update { it.copy(categories = categories, isLoading = false, backupStatus = "") }
             applySortingAndGrouping()
@@ -134,6 +152,30 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 } else category
             })
+        }
+    }
+
+    fun toggleMasterSelection() {
+        val newState = !_uiState.value.isMasterSelected
+        _uiState.update { state ->
+            state.copy(
+                isMasterSelected = newState,
+                categories = state.categories.map { category ->
+                    category.copy(
+                        isAllSelected = newState,
+                        items = category.items.map { item ->
+                            when (item) {
+                                is BackupItem.SmsMessage -> item.copy(isSelected = newState)
+                                is BackupItem.CallLogEntry -> item.copy(isSelected = newState)
+                                is BackupItem.Contact -> item.copy(isSelected = newState)
+                                is BackupItem.Apk -> item.copy(isSelected = newState)
+                                is BackupItem.UserFile -> item.copy(isSelected = newState)
+                                is BackupItem.SystemSetting -> item.copy(isSelected = newState)
+                            }
+                        }
+                    )
+                }
+            )
         }
     }
 

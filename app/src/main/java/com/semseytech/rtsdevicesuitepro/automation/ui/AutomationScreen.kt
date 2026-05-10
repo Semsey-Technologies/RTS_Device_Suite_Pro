@@ -7,6 +7,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Help
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,6 +27,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.semseytech.rtsdevicesuitepro.ui.permissions.PermissionRegistry
+import com.semseytech.rtsdevicesuitepro.ui.permissions.PermissionPrefs
+import com.semseytech.rtsdevicesuitepro.ui.permissions.PermissionRationaleDialog
+import com.semseytech.rtsdevicesuitepro.ui.permissions.PermissionUtils
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlin.math.roundToInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.semseytech.rtsdevicesuitepro.automation.data.RuleEntity
@@ -40,9 +54,77 @@ fun AutomationScreen(
 ) {
     val rules by viewModel.rules.collectAsState()
     val groups by viewModel.groups.collectAsState()
+    val flows by viewModel.flows.collectAsState()
+    val runningRules by viewModel.runningRules.collectAsState()
     var showAddGroupDialog by remember { mutableStateOf(false) }
+    var ruleToEdit by remember { mutableStateOf<RuleEntity?>(null) }
+    var showAddRuleDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    val context = LocalContext.current
+    val permissionPrefs = remember { PermissionPrefs(context) }
+    var permissionsToRequest by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showRationale by remember { mutableStateOf(false) }
+    var onPermissionsGranted by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingPermissions by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        if (results.values.all { it }) {
+            val missing = pendingPermissions.filter {
+                !PermissionUtils.isPermissionGranted(context, it)
+            }
+            if (missing.isEmpty()) {
+                onPermissionsGranted?.invoke()
+                onPermissionsGranted = null
+                pendingPermissions = emptyList()
+            }
+        } else {
+            onPermissionsGranted = null
+            pendingPermissions = emptyList()
+        }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                onPermissionsGranted?.let { callback ->
+                    val missing = pendingPermissions.filter {
+                        !PermissionUtils.isPermissionGranted(context, it)
+                    }
+                    if (missing.isEmpty()) {
+                        callback()
+                        onPermissionsGranted = null
+                        pendingPermissions = emptyList()
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    fun checkAndRequestAll(trigger: Trigger, conditions: List<Condition>, actions: List<Action>, onGranted: () -> Unit) {
+        val allPermissions = (listOf(trigger) + conditions + actions).flatMap { it.requiredPermissions }.distinct()
+        val missing = allPermissions.filter { !PermissionUtils.isPermissionGranted(context, it) }
+        
+        if (missing.isEmpty()) {
+            onGranted()
+        } else {
+            val unshownPermissions = missing.filter { !permissionPrefs.isExplanationShown(it) }
+            pendingPermissions = missing
+            onPermissionsGranted = onGranted
+            if (unshownPermissions.isNotEmpty()) {
+                permissionsToRequest = missing
+                showRationale = true
+            } else {
+                PermissionUtils.requestPermissions(context, missing, permissionLauncher)
+            }
+        }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -55,6 +137,9 @@ fun AutomationScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showAddRuleDialog = true }) {
+                        Icon(Icons.Default.AddBox, "Standard Rule", tint = Color.White)
+                    }
                     IconButton(onClick = { showAddGroupDialog = true }) {
                         Icon(Icons.Default.CreateNewFolder, "Add Group", tint = Color.White)
                     }
@@ -92,19 +177,38 @@ fun AutomationScreen(
                     RuleCard(
                         rule = rule,
                         groups = groups,
-                        onToggle = { viewModel.toggleRule(rule.id, it) },
+                        isRunning = runningRules.contains(rule.id),
+                        onToggle = { enabled ->
+                            if (enabled) {
+                                checkAndRequestAll(rule.trigger, rule.conditions, rule.actions) {
+                                    viewModel.toggleRule(rule.id, true)
+                                }
+                            } else {
+                                viewModel.toggleRule(rule.id, false)
+                            }
+                        },
+                        onEdit = { 
+                            android.util.Log.d("AutomationScreen", "Editing rule: ${rule.name}")
+                            ruleToEdit = rule 
+                        },
                         onDelete = { viewModel.deleteRule(rule) },
-                        onMove = { viewModel.moveRuleToGroup(rule.id, it) }
+                        onMove = { viewModel.moveRuleToGroup(rule.id, it) },
+                        onRun = { 
+                            checkAndRequestAll(rule.trigger, rule.conditions, rule.actions) {
+                                viewModel.runRule(rule)
+                            }
+                        },
+                        onStop = { viewModel.stopRule(rule.id) }
                     )
                 }
             }
 
             // Ungrouped Rules
             val ungroupedRules = rules.filter { it.groupId == null }
-            if (ungroupedRules.isNotEmpty()) {
+            if (ungroupedRules.isNotEmpty() || flows.isNotEmpty()) {
                 item {
                     Text(
-                        "Ungrouped",
+                        "Ungrouped & Flows",
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.Gray,
                         modifier = Modifier.padding(vertical = 8.dp)
@@ -114,9 +218,38 @@ fun AutomationScreen(
                     RuleCard(
                         rule = rule,
                         groups = groups,
-                        onToggle = { viewModel.toggleRule(rule.id, it) },
+                        isRunning = runningRules.contains(rule.id),
+                        onToggle = { enabled ->
+                            if (enabled) {
+                                checkAndRequestAll(rule.trigger, rule.conditions, rule.actions) {
+                                    viewModel.toggleRule(rule.id, true)
+                                }
+                            } else {
+                                viewModel.toggleRule(rule.id, false)
+                            }
+                        },
+                        onEdit = { 
+                            android.util.Log.d("AutomationScreen", "Editing ungrouped rule: ${rule.name}")
+                            ruleToEdit = rule 
+                        },
                         onDelete = { viewModel.deleteRule(rule) },
-                        onMove = { viewModel.moveRuleToGroup(rule.id, it) }
+                        onMove = { viewModel.moveRuleToGroup(rule.id, it) },
+                        onRun = { 
+                            checkAndRequestAll(rule.trigger, rule.conditions, rule.actions) {
+                                viewModel.runRule(rule)
+                            }
+                        },
+                        onStop = { viewModel.stopRule(rule.id) }
+                    )
+                }
+                items(flows, key = { it.id }) { flow ->
+                    FlowCard(
+                        flow = flow,
+                        onDelete = { viewModel.deleteFlow(flow) },
+                        onEdit = { 
+                            android.util.Log.d("AutomationScreen", "Editing flow: ${flow.name}")
+                            onNavigate(com.semseytech.rtsdevicesuitepro.navigation.Screen.FlowEditor.route + "/${flow.id}") 
+                        }
                     )
                 }
             }
@@ -128,6 +261,55 @@ fun AutomationScreen(
                 onConfirm = { name ->
                     viewModel.addGroup(name)
                     showAddGroupDialog = false
+                }
+            )
+        }
+
+        if (showAddRuleDialog) {
+            RuleEditorDialog(
+                groups = groups,
+                onDismiss = { showAddRuleDialog = false },
+                onConfirm = { name, trigger, conditions, actions, groupId ->
+                    viewModel.addRule(name, trigger, conditions, actions, groupId)
+                    showAddRuleDialog = false
+                }
+            )
+        }
+
+        if (ruleToEdit != null) {
+            RuleEditorDialog(
+                rule = ruleToEdit,
+                groups = groups,
+                onDismiss = { ruleToEdit = null },
+                onConfirm = { name, trigger, conditions, actions, groupId ->
+                    val updatedRule = ruleToEdit!!.copy(
+                        name = name,
+                        trigger = trigger,
+                        conditions = conditions,
+                        actions = actions,
+                        groupId = groupId
+                    )
+                    viewModel.updateRule(updatedRule)
+                    ruleToEdit = null
+                }
+            )
+        }
+
+        if (showRationale) {
+            PermissionRationaleDialog(
+                permissions = permissionsToRequest,
+                onConfirm = {
+                    showRationale = false
+                    permissionsToRequest.forEach { permissionPrefs.markExplanationShown(it) }
+                    PermissionUtils.requestPermissions(context, permissionsToRequest, permissionLauncher)
+                },
+                onDismiss = {
+                    showRationale = false
+                    onPermissionsGranted = null
+                },
+                onNavigateToHelp = {
+                    showRationale = false
+                    onPermissionsGranted = null
                 }
             )
         }
@@ -161,9 +343,13 @@ fun GroupHeader(group: RuleGroup, onDelete: () -> Unit) {
 fun RuleCard(
     rule: RuleEntity,
     groups: List<RuleGroup>,
+    isRunning: Boolean = false,
     onToggle: (Boolean) -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onMove: (String?) -> Unit
+    onMove: (String?) -> Unit,
+    onRun: () -> Unit,
+    onStop: () -> Unit
 ) {
     var showMoveMenu by remember { mutableStateOf(false) }
 
@@ -186,6 +372,16 @@ fun RuleCard(
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isRunning) {
+                        IconButton(onClick = onStop) {
+                            Icon(Icons.Default.Stop, "Stop Rule", tint = Color.Red)
+                        }
+                    } else {
+                        IconButton(onClick = onRun) {
+                            Icon(Icons.Default.PlayArrow, "Run Rule", tint = Color(0xFF00FF99))
+                        }
+                    }
+
                     Switch(
                         checked = rule.isEnabled,
                         onCheckedChange = onToggle,
@@ -197,6 +393,13 @@ fun RuleCard(
                             Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = Color.Gray)
                         }
                         DropdownMenu(expanded = showMoveMenu, onDismissRequest = { showMoveMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Edit") },
+                                onClick = {
+                                    showMoveMenu = false
+                                    onEdit()
+                                }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Move to...") },
                                 onClick = { /* Nested menu not easy here, just show list */ },
@@ -243,6 +446,41 @@ fun RuleCard(
 }
 
 @Composable
+fun FlowCard(
+    flow: com.semseytech.rtsdevicesuitepro.automation.data.FlowGraphEntity,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.AccountTree, null, tint = Color.Cyan)
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(flow.name, color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Flow Graph", color = Color.Gray, fontSize = 12.sp)
+                }
+            }
+            Row {
+                IconButton(onClick = onEdit) {
+                    Icon(Icons.Default.Edit, "Edit", tint = Color.Gray)
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, "Delete", tint = Color.Red)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun AddGroupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var name by remember { mutableStateOf("") }
     AlertDialog(
@@ -268,22 +506,119 @@ fun AddGroupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
 }
 
 @Composable
-fun AddRuleDialog(
+fun RuleEditorDialog(
+    rule: RuleEntity? = null,
     groups: List<RuleGroup>,
     onDismiss: () -> Unit,
-    onAdd: (String, Trigger, List<Condition>, List<Action>, String?) -> Unit
+    onConfirm: (String, Trigger, List<Condition>, List<Action>, String?) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var selectedTrigger by remember { mutableStateOf<Trigger>(Trigger.WiFiConnected) }
-    val selectedConditions = remember { mutableStateListOf<Condition>() }
-    val selectedActions = remember { mutableStateListOf<Action>() }
-    var selectedGroupId by remember { mutableStateOf<String?>(null) }
+    var name by remember(rule) { mutableStateOf(rule?.name ?: "") }
+    var selectedTrigger by remember(rule) { mutableStateOf<Trigger>(rule?.trigger ?: Trigger.WiFiConnected) }
+    val selectedConditions = remember(rule) { 
+        mutableStateListOf<Condition>().apply { 
+            rule?.conditions?.let { addAll(it) } 
+        } 
+    }
+    val selectedActions = remember(rule) { 
+        mutableStateListOf<Action>().apply { 
+            rule?.actions?.let { addAll(it) } 
+        } 
+    }
+    var selectedGroupId by remember(rule) { mutableStateOf<String?>(rule?.groupId) }
     
-    var editingComponent by remember { mutableStateOf<AutomationComponent?>(null) }
+    var editingComponent by remember(rule) { mutableStateOf<AutomationComponent?>(null) }
+
+    val context = LocalContext.current
+    val permissionPrefs = remember { PermissionPrefs(context) }
+    var permissionsToRequest by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showRationale by remember { mutableStateOf(false) }
+    var onPermissionsGranted by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingComponent by remember { mutableStateOf<AutomationComponent?>(null) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        if (results.values.all { it }) {
+            // Check if there are any special permissions still missing
+            val missing = pendingComponent?.requiredPermissions?.filter {
+                !PermissionUtils.isPermissionGranted(context, it)
+            } ?: emptyList()
+            
+            if (missing.isEmpty()) {
+                onPermissionsGranted?.invoke()
+                onPermissionsGranted = null
+                pendingComponent = null
+            }
+        } else {
+            onPermissionsGranted = null
+            pendingComponent = null
+        }
+    }
+
+    // Re-check when returning to app (for special permissions)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                onPermissionsGranted?.let { callback ->
+                    val missing = pendingComponent?.requiredPermissions?.filter {
+                        !PermissionUtils.isPermissionGranted(context, it)
+                    } ?: emptyList()
+                    
+                    if (missing.isEmpty()) {
+                        callback()
+                        onPermissionsGranted = null
+                        pendingComponent = null
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    fun checkAndRequest(component: AutomationComponent, onGranted: () -> Unit) {
+        val missing = component.requiredPermissions.filter {
+            !PermissionUtils.isPermissionGranted(context, it)
+        }
+        if (missing.isEmpty()) {
+            onGranted()
+        } else {
+            val unshownPermissions = missing.filter { !permissionPrefs.isExplanationShown(it) }
+            pendingComponent = component
+            onPermissionsGranted = onGranted
+            if (unshownPermissions.isNotEmpty()) {
+                permissionsToRequest = missing
+                showRationale = true
+            } else {
+                PermissionUtils.requestPermissions(context, missing, permissionLauncher)
+            }
+        }
+    }
+
+    if (showRationale) {
+        PermissionRationaleDialog(
+            permissions = permissionsToRequest,
+            onConfirm = {
+                showRationale = false
+                permissionsToRequest.forEach { permissionPrefs.markExplanationShown(it) }
+                PermissionUtils.requestPermissions(context, permissionsToRequest, permissionLauncher)
+            },
+            onDismiss = {
+                showRationale = false
+                onPermissionsGranted = null
+            },
+            onNavigateToHelp = {
+                showRationale = false
+                onPermissionsGranted = null
+                onDismiss()
+            }
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Build New Rule", color = Color.White) },
+        title = { Text(if (rule == null) "Build New Rule" else "Edit Rule", color = Color.White) },
         containerColor = Color(0xFF1E1E1E),
         text = {
             Column(
@@ -335,28 +670,91 @@ fun AddRuleDialog(
                 }
                 
                 SectionHeader("1. Select Trigger")
+                val triggerOptions = listOf(
+                    Trigger.WiFiConnected,
+                    Trigger.WiFiDisconnected,
+                    Trigger.SpecificWiFiConnected(),
+                    Trigger.WiFiSignalStrength(),
+                    Trigger.MobileDataOn,
+                    Trigger.MobileDataOff,
+                    Trigger.MobileDataTypeChanged(),
+                    Trigger.HotspotOn,
+                    Trigger.HotspotOff,
+                    Trigger.VpnConnected,
+                    Trigger.VpnDisconnected,
+                    Trigger.IpAddressChanged,
+                    Trigger.NetworkAvailable,
+                    Trigger.NetworkLost,
+                    Trigger.BluetoothOn,
+                    Trigger.BluetoothOff,
+                    Trigger.BluetoothDeviceConnected(),
+                    Trigger.BluetoothDeviceDisconnected(),
+                    Trigger.PingStatus(),
+                    Trigger.DomainReachability(),
+                    Trigger.NetworkSpeedThreshold(),
+                    Trigger.PowerConnected,
+                    Trigger.PowerDisconnected,
+                    Trigger.BatteryLevelAbove(),
+                    Trigger.BatteryLevelBelow(),
+                    Trigger.ScreenOn,
+                    Trigger.ScreenOff,
+                    Trigger.ScreenUnlocked,
+                    Trigger.BootCompleted,
+                    Trigger.TimeOfDay(),
+                    Trigger.TimeRange(),
+                    Trigger.DaysOfWeek(),
+                    Trigger.DayOfMonth(),
+                    Trigger.MonthOfYear(),
+                    Trigger.RecurringTrigger(),
+                    Trigger.IntervalTrigger(),
+                    Trigger.Sunrise,
+                    Trigger.Sunset,
+                    Trigger.GoldenHour(),
+                    Trigger.TimerFinished(),
+                    Trigger.StopwatchThreshold(),
+                    Trigger.CountdownReached(),
+                    Trigger.CronSchedule(),
+                    Trigger.AppOpened(),
+                    Trigger.AppClosed(),
+                    Trigger.AppInstalled(),
+                    Trigger.AppUninstalled(),
+                    Trigger.AppUpdated(),
+                    Trigger.AppCrashed(),
+                    Trigger.ForegroundAppChanged,
+                    Trigger.NotificationPosted(),
+                    Trigger.NotificationRemoved(),
+                    Trigger.NotificationMatches(),
+                    Trigger.SystemDialogOpened,
+                    Trigger.KeyboardStateChanged(),
+                    Trigger.AccessibilityEventDetected(),
+                    Trigger.ToastDetected(),
+                    Trigger.OverlayPermissionChanged(),
+                    Trigger.FileCreated(),
+                    Trigger.FileDeleted(),
+                    Trigger.FileModified(),
+                    Trigger.FolderChanged(),
+                    Trigger.ExternalStorageMounted,
+                    Trigger.ExternalStorageUnmounted,
+                    Trigger.DownloadCompleted,
+                    Trigger.ScreenshotTaken,
+                    Trigger.StorageSizeTrigger(),
+                    Trigger.LightSensorThreshold(),
+                    Trigger.MagnetometerThreshold(),
+                    Trigger.BarometerThreshold(),
+                    Trigger.TemperatureThreshold(),
+                    Trigger.HumidityThreshold(),
+                    Trigger.HeartRateThreshold(),
+                    Trigger.AmbientNoiseThreshold(),
+                    Trigger.StepCountThreshold(),
+                    Trigger.ProximityTriggered(),
+                    Trigger.AccelerometerPattern(),
+                    Trigger.GyroscopePattern(),
+                    Trigger.TouchGesturePattern()
+                )
                 ComponentSelector(
                     current = selectedTrigger,
-                    options = listOf(
-                        Trigger.WiFiConnected,
-                        Trigger.WiFiDisconnected,
-                        Trigger.SpecificWiFiConnected(),
-                        Trigger.WiFiSignalLow(),
-                        Trigger.MobileDataActive,
-                        Trigger.PowerConnected,
-                        Trigger.PowerDisconnected,
-                        Trigger.BatteryLevelAbove(),
-                        Trigger.BatteryLevelBelow(),
-                        Trigger.ScreenOn,
-                        Trigger.ScreenOff,
-                        Trigger.ScreenUnlocked,
-                        Trigger.DeviceBootCompleted,
-                        Trigger.BluetoothOn,
-                        Trigger.BluetoothDeviceConnected(),
-                        Trigger.TimeOfDay(),
-                        Trigger.AppOpened()
-                    ),
-                    onSelected = { selectedTrigger = it as Trigger },
+                    options = triggerOptions,
+                    onSelected = { checkAndRequest(it) { selectedTrigger = it as Trigger } },
                     onEdit = { editingComponent = it }
                 )
                 
@@ -388,8 +786,10 @@ fun AddRuleDialog(
                             DropdownMenuItem(
                                 text = { Text(opt.displayName) },
                                 onClick = {
-                                    selectedConditions.add(opt)
-                                    showConditionOptions = false
+                                    checkAndRequest(opt) {
+                                        selectedConditions.add(opt)
+                                        showConditionOptions = false
+                                    }
                                 }
                             )
                         }
@@ -421,16 +821,22 @@ fun AddRuleDialog(
                             Action.LaunchApp(),
                             Action.ShowNotification(),
                             Action.ShowToast(),
+                            Action.AutoClean(),
+                            Action.RunBackup(),
+                            Action.RunRestore(),
                             Action.ToggleFlashlight,
                             Action.SetBrightness(),
-                            Action.Delay()
+                            Action.Delay(),
+                            Action.RunAdbCommand()
                         )
                         actionOptions.forEach { opt ->
                             DropdownMenuItem(
                                 text = { Text(opt.displayName) },
                                 onClick = {
-                                    selectedActions.add(opt)
-                                    showActionOptions = false
+                                    checkAndRequest(opt) {
+                                        selectedActions.add(opt)
+                                        showActionOptions = false
+                                    }
                                 }
                             )
                         }
@@ -440,10 +846,10 @@ fun AddRuleDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onAdd(name, selectedTrigger, selectedConditions.toList(), selectedActions.toList(), selectedGroupId) },
+                onClick = { onConfirm(name, selectedTrigger, selectedConditions.toList(), selectedActions.toList(), selectedGroupId) },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF))
             ) {
-                Text("Create Rule", color = Color.Black)
+                Text(if (rule == null) "Create Rule" else "Save Changes", color = Color.Black)
             }
         },
         dismissButton = {
@@ -486,6 +892,7 @@ fun ComponentSelector(
     onEdit: (AutomationComponent) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val groupedOptions = remember(options) { options.groupBy { it.category } }
     
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -494,17 +901,49 @@ fun ComponentSelector(
                     onClick = { expanded = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    Icon(
+                        imageVector = getIconForName(current.icon),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = Color(0xFF00E5FF)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(current.displayName, color = Color.White)
                 }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    options.forEach { opt ->
-                        DropdownMenuItem(
-                            text = { Text(opt.displayName) },
-                            onClick = {
-                                onSelected(opt)
-                                expanded = false
-                            }
+                DropdownMenu(
+                    expanded = expanded, 
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier.background(Color(0xFF252525)).fillMaxWidth(0.8f).heightIn(max = 400.dp)
+                ) {
+                    groupedOptions.forEach { (category, components) ->
+                        Text(
+                            text = category,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Color(0xFF00E5FF),
+                            fontWeight = FontWeight.Bold
                         )
+                        components.forEach { opt ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = getIconForName(opt.icon),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = Color.Gray
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(opt.displayName)
+                                    }
+                                },
+                                onClick = {
+                                    onSelected(opt)
+                                    expanded = false
+                                }
+                            )
+                        }
+                        HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
                     }
                 }
             }
@@ -514,6 +953,93 @@ fun ComponentSelector(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun getIconForName(name: String): androidx.compose.ui.graphics.vector.ImageVector {
+    return when (name) {
+        "wifi" -> Icons.Default.Wifi
+        "wifi_off" -> Icons.Default.WifiOff
+        "network_wifi" -> Icons.Default.NetworkWifi
+        "signal_wifi_4_bar" -> Icons.Default.SignalWifi4Bar
+        "signal_cellular_4_bar" -> Icons.Default.SignalCellular4Bar
+        "signal_cellular_connected_no_internet_4_bar" -> Icons.Default.SignalCellularConnectedNoInternet4Bar
+        "network_check" -> Icons.Default.NetworkCheck
+        "wifi_tethering" -> Icons.Default.WifiTethering
+        "wifi_tethering_off" -> Icons.Default.WifiTetheringOff
+        "vpn_lock" -> Icons.Default.VpnLock
+        "lan" -> Icons.Default.Lan
+        "public" -> Icons.Default.Public
+        "public_off" -> Icons.Default.PublicOff
+        "bluetooth" -> Icons.Default.Bluetooth
+        "bluetooth_disabled" -> Icons.Default.BluetoothDisabled
+        "bluetooth_connected" -> Icons.Default.BluetoothConnected
+        "settings_ethernet" -> Icons.Default.SettingsEthernet
+        "language" -> Icons.Default.Language
+        "speed" -> Icons.Default.Speed
+        "power" -> Icons.Default.Power
+        "power_off" -> Icons.Default.PowerOff
+        "battery_full" -> Icons.Default.BatteryFull
+        "battery_alert" -> Icons.Default.BatteryAlert
+        "smartphone" -> Icons.Default.Smartphone
+        "screen_lock_portrait" -> Icons.Default.ScreenLockPortrait
+        "lock_open" -> Icons.Default.LockOpen
+        "restart_alt" -> Icons.Default.RestartAlt
+        "schedule" -> Icons.Default.Schedule
+        "apps" -> Icons.Default.Apps
+        "close" -> Icons.Default.Close
+        "install_mobile" -> Icons.Default.InstallMobile
+        "delete_sweep" -> Icons.Default.DeleteSweep
+        "update" -> Icons.Default.Update
+        "error" -> Icons.Default.Error
+        "api" -> Icons.Default.Api
+        "notifications_active" -> Icons.Default.NotificationsActive
+        "notifications_off" -> Icons.Default.NotificationsOff
+        "notification_important" -> Icons.Default.NotificationImportant
+        "picture_in_picture" -> Icons.Default.PictureInPicture
+        "keyboard" -> Icons.Default.Keyboard
+        "accessibility" -> Icons.Default.Accessibility
+        "announcement" -> Icons.AutoMirrored.Filled.Announcement
+        "layers" -> Icons.Default.Layers
+        "date_range" -> Icons.Default.DateRange
+        "calendar_today" -> Icons.Default.CalendarToday
+        "calendar_view_month" -> Icons.Default.CalendarViewMonth
+        "wb_twilight" -> Icons.Default.WbTwilight
+        "timer" -> Icons.Default.Timer
+        "timer_10" -> Icons.Default.Timer10
+        "hourglass_bottom" -> Icons.Default.HourglassBottom
+        "code" -> Icons.Default.Code
+        "calendar_month" -> Icons.Default.CalendarMonth
+        "event_repeat" -> Icons.Default.EventRepeat
+        "wb_sunny" -> Icons.Default.WbSunny
+        "nights_stay" -> Icons.Default.NightsStay
+        "create_new_folder" -> Icons.Default.CreateNewFolder
+        "delete_forever" -> Icons.Default.DeleteForever
+        "edit_note" -> Icons.Default.EditNote
+        "folder_zip" -> Icons.Default.FolderZip
+        "sd_card" -> Icons.Default.SdCard
+        "sd_card_alert" -> Icons.Default.SdCardAlert
+        "download_done" -> Icons.Default.DownloadDone
+        "screenshot" -> Icons.Default.Screenshot
+        "storage" -> Icons.Default.Storage
+        "cleaning_services" -> Icons.Default.CleaningServices
+        "cloud_upload" -> Icons.Default.CloudUpload
+        "settings_backup_restore" -> Icons.Default.SettingsBackupRestore
+        "brightness_medium" -> Icons.Default.BrightnessMedium
+        "explore" -> Icons.Default.Explore
+        "compress" -> Icons.Default.Compress
+        "thermostat" -> Icons.Default.Thermostat
+        "water_drop" -> Icons.Default.WaterDrop
+        "favorite" -> Icons.Default.Favorite
+        "graphic_eq" -> Icons.Default.GraphicEq
+        "touch_app" -> Icons.Default.TouchApp
+        "vibration" -> Icons.Default.Vibration
+        "sync" -> Icons.Default.Sync
+        "visibility" -> Icons.Default.Visibility
+        "directions_walk" -> Icons.AutoMirrored.Filled.DirectionsWalk
+        "landscape" -> Icons.Default.Landscape
+        else -> Icons.AutoMirrored.Filled.Help
     }
 }
 
@@ -683,7 +1209,24 @@ fun ParameterPromptDialog(
 fun updateComponent(component: AutomationComponent, params: Map<String, Any?>): AutomationComponent {
     return when (component) {
         is Trigger.SpecificWiFiConnected -> component.copy(ssid = params["ssid"] as? String ?: "")
-        is Trigger.WiFiSignalLow -> component.copy(threshold = params["threshold"] as? Int ?: component.threshold)
+        is Trigger.WiFiSignalStrength -> component.copy(
+            threshold = params["threshold"] as? Int ?: component.threshold,
+            comparison = params["comparison"] as? String ?: component.comparison
+        )
+        is Trigger.MobileDataTypeChanged -> component.copy(targetType = params["targetType"] as? String ?: "ANY")
+        is Trigger.BluetoothDeviceDisconnected -> component.copy(address = params["address"] as? String ?: "")
+        is Trigger.PingStatus -> component.copy(
+            host = params["host"] as? String ?: "8.8.8.8",
+            status = params["status"] as? String ?: "SUCCESS"
+        )
+        is Trigger.DomainReachability -> component.copy(
+            domain = params["domain"] as? String ?: "google.com",
+            status = params["status"] as? String ?: "REACHABLE"
+        )
+        is Trigger.NetworkSpeedThreshold -> component.copy(
+            speedMbps = params["speedMbps"] as? Int ?: component.speedMbps,
+            comparison = params["comparison"] as? String ?: component.comparison
+        )
         is Trigger.BatteryLevelAbove -> component.copy(level = params["level"] as? Int ?: component.level)
         is Trigger.BatteryLevelBelow -> component.copy(level = params["level"] as? Int ?: component.level)
         is Trigger.BluetoothDeviceConnected -> component.copy(address = params["address"] as? String ?: "")
@@ -695,8 +1238,79 @@ fun updateComponent(component: AutomationComponent, params: Map<String, Any?>): 
                 minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
             )
         }
+        is Trigger.TimeRange -> {
+            val startParts = (params["start"] as? String ?: "09:00").split(":")
+            val endParts = (params["end"] as? String ?: "17:00").split(":")
+            component.copy(
+                startHour = startParts.getOrNull(0)?.toIntOrNull() ?: 9,
+                startMin = startParts.getOrNull(1)?.toIntOrNull() ?: 0,
+                endHour = endParts.getOrNull(0)?.toIntOrNull() ?: 17,
+                endMin = endParts.getOrNull(1)?.toIntOrNull() ?: 0
+            )
+        }
+        is Trigger.DayOfMonth -> component.copy(day = params["day"] as? Int ?: 1)
+        is Trigger.MonthOfYear -> component.copy(month = params["month"] as? Int ?: 1)
+        is Trigger.GoldenHour -> component.copy(isMorning = params["isMorning"] == "MORNING")
+        is Trigger.TimerFinished -> component.copy(timerName = params["timerName"] as? String ?: "Default")
+        is Trigger.StopwatchThreshold -> component.copy(
+            stopwatchName = params["stopwatchName"] as? String ?: "Default",
+            thresholdSeconds = params["threshold"] as? Int ?: 60
+        )
+        is Trigger.CountdownReached -> component.copy(countdownName = params["countdownName"] as? String ?: "Default")
+        is Trigger.CronSchedule -> component.copy(expression = params["expression"] as? String ?: "0 0 * * *")
         is Trigger.AppOpened -> component.copy(packageName = params["packageName"] as? String ?: "")
+        is Trigger.AppClosed -> component.copy(packageName = params["packageName"] as? String ?: "")
+        is Trigger.AppInstalled -> component.copy(packageName = params["packageName"] as? String ?: "")
+        is Trigger.AppUninstalled -> component.copy(packageName = params["packageName"] as? String ?: "")
+        is Trigger.AppUpdated -> component.copy(packageName = params["packageName"] as? String ?: "")
+        is Trigger.AppCrashed -> component.copy(packageName = params["packageName"] as? String ?: "")
+        is Trigger.NotificationPosted -> component.copy(packageName = params["packageName"] as? String ?: "")
+        is Trigger.NotificationRemoved -> component.copy(packageName = params["packageName"] as? String ?: "")
+        is Trigger.NotificationMatches -> component.copy(pattern = params["pattern"] as? String ?: "")
+        is Trigger.KeyboardStateChanged -> component.copy(opened = params["opened"] == "OPENED")
+        is Trigger.AccessibilityEventDetected -> component.copy(eventType = params["eventType"] as? String ?: "VIEW_CLICKED")
+        is Trigger.ToastDetected -> component.copy(message = params["message"] as? String ?: "")
+        is Trigger.OverlayPermissionChanged -> component.copy(granted = params["granted"] == "GRANTED")
         
+        is Trigger.FileCreated -> component.copy(path = params["path"] as? String ?: "")
+        is Trigger.FileDeleted -> component.copy(path = params["path"] as? String ?: "")
+        is Trigger.FileModified -> component.copy(path = params["path"] as? String ?: "")
+        is Trigger.FolderChanged -> component.copy(path = params["path"] as? String ?: "")
+        is Trigger.StorageSizeTrigger -> component.copy(
+            sizeGB = params["sizeGB"] as? Int ?: component.sizeGB,
+            comparison = params["comparison"] as? String ?: component.comparison
+        )
+        is Trigger.LightSensorThreshold -> component.copy(lux = params["lux"] as? Int ?: component.lux)
+        is Trigger.MagnetometerThreshold -> component.copy(
+            strength = params["strength"] as? Int ?: component.strength,
+            comparison = params["comparison"] as? String ?: component.comparison
+        )
+        is Trigger.BarometerThreshold -> component.copy(
+            pressure = params["pressure"] as? Int ?: component.pressure,
+            comparison = params["comparison"] as? String ?: component.comparison
+        )
+        is Trigger.TemperatureThreshold -> component.copy(
+            temp = params["temp"] as? Int ?: component.temp,
+            comparison = params["comparison"] as? String ?: component.comparison
+        )
+        is Trigger.HumidityThreshold -> component.copy(
+            humidity = params["humidity"] as? Int ?: component.humidity,
+            comparison = params["comparison"] as? String ?: component.comparison
+        )
+        is Trigger.HeartRateThreshold -> component.copy(
+            bpm = params["bpm"] as? Int ?: component.bpm,
+            comparison = params["comparison"] as? String ?: component.comparison
+        )
+        is Trigger.AmbientNoiseThreshold -> component.copy(
+            decibels = params["decibels"] as? Int ?: component.decibels,
+            comparison = params["comparison"] as? String ?: component.comparison
+        )
+        is Trigger.StepCountThreshold -> component.copy(steps = params["steps"] as? Int ?: component.steps)
+        is Trigger.ProximityTriggered -> component.copy(near = params["near"] == "NEAR")
+        is Trigger.AccelerometerPattern -> component.copy(pattern = params["pattern"] as? String ?: "SHAKE")
+        is Trigger.GyroscopePattern -> component.copy(pattern = params["pattern"] as? String ?: "ROTATION")
+        is Trigger.TouchGesturePattern -> component.copy(pattern = params["pattern"] as? String ?: "DOUBLE_TAP")
+
         is Condition.WiFiSSIDIs -> component.copy(ssid = params["ssid"] as? String ?: "")
         is Condition.BatteryLevelBetween -> component.copy(
             min = params["min"] as? Int ?: component.min,
@@ -713,8 +1327,15 @@ fun updateComponent(component: AutomationComponent, params: Map<String, Any?>): 
             message = params["message"] as? String ?: component.message
         )
         is Action.ShowToast -> component.copy(message = params["message"] as? String ?: component.message)
+        is Action.AutoClean -> component.copy(categories = params["categories"] as? String ?: component.categories)
+        is Action.RunBackup -> component.copy(categories = params["categories"] as? String ?: component.categories)
+        is Action.RunRestore -> component.copy(
+            archivePath = params["archivePath"] as? String ?: component.archivePath,
+            categories = params["categories"] as? String ?: component.categories
+        )
         is Action.SetBrightness -> component.copy(level = params["level"] as? Int ?: component.level)
         is Action.Delay -> component.copy(seconds = params["seconds"] as? Int ?: component.seconds)
+        is Action.RunAdbCommand -> component.copy(command = params["command"] as? String ?: component.command)
         else -> component
     }
 }

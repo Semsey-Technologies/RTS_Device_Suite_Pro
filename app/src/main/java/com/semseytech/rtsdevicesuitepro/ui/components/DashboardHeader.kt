@@ -46,37 +46,60 @@ fun DashboardHeader(onNavigate: (String) -> Unit) {
         path
     }
 
+    // Custom icon positioning based on theme
+    val iconAlignment = when (theme.name) {
+        "Neon Dark Cyber" -> Alignment.Center
+        "Deep Blue Systems", "Terminal Green", "Solarized Tech" -> Alignment.BottomCenter
+        else -> Alignment.BottomStart
+    }
+
+    val iconArrangement = when (theme.name) {
+        "Neon Dark Cyber" -> Arrangement.End
+        "Deep Blue Systems" -> Arrangement.Center
+        "Terminal Green", "Solarized Tech" -> Arrangement.SpaceBetween
+        else -> Arrangement.Start
+    }
+
+    val iconPadding = when (theme.name) {
+        "Deep Blue Systems" -> PaddingValues(bottom = 0.dp) // Absolute bottom of the banner
+        "Terminal Green" -> PaddingValues(bottom = 8.dp, start = 16.dp, end = 16.dp)
+        "Solarized Tech" -> PaddingValues(bottom = 8.dp, start = 24.dp, end = 24.dp) // Moved down and increased horizontal distance
+        else -> PaddingValues(8.dp)
+    }
+
     Surface(
         color = theme.startColor.copy(alpha = 0.95f),
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding(), // Move down so it's not interrupted by camera cutout
+        modifier = Modifier.fillMaxWidth(),
         border = BorderStroke(1.dp, theme.accentColor.copy(alpha = 0.15f))
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(100.dp)
+                .statusBarsPadding()
+                .height(140.dp)
         ) {
             // The Banner Image from assets (theme-specific) or fallback drawable
             AsyncImage(
                 model = bannerPath ?: R.drawable.banner,
                 contentDescription = "RTS Banner",
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.FillBounds
+                contentScale = ContentScale.Crop
             )
             
             // Persistent Interactive Icons Overlay
             Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End
+                    .fillMaxWidth()
+                    .align(iconAlignment)
+                    .padding(iconPadding),
+                horizontalArrangement = iconArrangement,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                RotatingCogIcon(onClick = { onNavigate(Screen.Tools.route) })
-                Spacer(modifier = Modifier.width(16.dp))
                 SpinningHelpIcon(onClick = { onNavigate(Screen.HelpAndPermissions.route) })
+                if (iconArrangement != Arrangement.SpaceBetween) {
+                    Spacer(modifier = Modifier.width(12.dp))
+                }
+                RotatingCogIcon(onClick = { onNavigate(Screen.Tools.route) })
             }
         }
     }
@@ -84,6 +107,7 @@ fun DashboardHeader(onNavigate: (String) -> Unit) {
 
 @Composable
 fun RotatingCogIcon(onClick: () -> Unit) {
+    val theme = LocalTheme.current
     val infiniteTransition = rememberInfiniteTransition(label = "cogRotation")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -99,7 +123,7 @@ fun RotatingCogIcon(onClick: () -> Unit) {
         Icon(
             imageVector = Icons.Default.Settings,
             contentDescription = "Tools",
-            tint = Color.White,
+            tint = theme.accentColor,
             modifier = Modifier
                 .size(24.dp)
                 .rotate(rotation)
@@ -109,6 +133,7 @@ fun RotatingCogIcon(onClick: () -> Unit) {
 
 @Composable
 fun SpinningHelpIcon(onClick: () -> Unit) {
+    val theme = LocalTheme.current
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val isHovered by interactionSource.collectIsHoveredAsState()
@@ -140,7 +165,7 @@ fun SpinningHelpIcon(onClick: () -> Unit) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.Help,
             contentDescription = "Help",
-            tint = Color.White,
+            tint = theme.accentColor,
             modifier = Modifier
                 .size(24.dp)
                 .rotate(rotation.value)

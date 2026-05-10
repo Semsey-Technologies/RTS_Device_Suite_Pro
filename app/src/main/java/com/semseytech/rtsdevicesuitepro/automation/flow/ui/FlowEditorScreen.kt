@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.CallReceived
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -85,7 +87,11 @@ fun FlowEditorScreen(
                             Icon(Icons.Default.PlayArrow, contentDescription = "Run", tint = Color.Green)
                         }
                     }
-                    IconButton(onClick = { /* TODO: Save to DB */ }) {
+                    IconButton(onClick = { 
+                        viewModel.saveFlow {
+                            onBackClick()
+                        }
+                    }) {
                         Icon(Icons.Default.Save, contentDescription = "Save", tint = Color.White)
                     }
                 },
@@ -306,6 +312,72 @@ fun Port(color: Color, onClick: () -> Unit) {
 }
 
 @Composable
+fun getIconForName(name: String): androidx.compose.ui.graphics.vector.ImageVector {
+    return when (name) {
+        "table_chart" -> Icons.Default.TableChart
+        "add_comment" -> Icons.Default.AddComment
+        "comment" -> Icons.Default.Comment
+        "check_circle" -> Icons.Default.CheckCircle
+        "person_add" -> Icons.Default.PersonAdd
+        "share" -> Icons.Default.Share
+        "insert_drive_file" -> Icons.Default.InsertDriveFile
+        "file_present" -> Icons.Default.FilePresent
+        "grid_on" -> Icons.Default.GridOn
+        "create_new_folder" -> Icons.Default.CreateNewFolder
+        "smartphone" -> Icons.Default.Smartphone
+        "screen_lock_portrait" -> Icons.Default.ScreenLockPortrait
+        "lock_open" -> Icons.Default.LockOpen
+        "power" -> Icons.Default.Power
+        "power_off" -> Icons.Default.PowerOff
+        "battery_full" -> Icons.Default.BatteryFull
+        "battery_alert" -> Icons.Default.BatteryAlert
+        "battery_charging_full" -> Icons.Default.BatteryChargingFull
+        "airplane_ticket" -> Icons.Default.AirplaneTicket
+        "screenshot" -> Icons.Default.Screenshot
+        "wifi" -> Icons.Default.Wifi
+        "wifi_off" -> Icons.Default.WifiOff
+        "network_wifi" -> Icons.Default.NetworkWifi
+        "bluetooth" -> Icons.Default.Bluetooth
+        "bluetooth_disabled" -> Icons.Default.BluetoothDisabled
+        "bluetooth_connected" -> Icons.Default.BluetoothConnected
+        "location_on" -> Icons.Default.LocationOn
+        "location_off" -> Icons.Default.LocationOff
+        "directions_walk" -> Icons.Default.DirectionsWalk
+        "directions_car" -> Icons.Default.DirectionsCar
+        "sms" -> Icons.Default.Sms
+        "person" -> Icons.Default.Person
+        "call" -> Icons.Default.Call
+        "call_missed" -> Icons.Default.CallMissed
+        "mms" -> Icons.Default.Mms
+        "call_received" -> Icons.AutoMirrored.Filled.CallReceived
+        "call_end" -> Icons.Default.CallEnd
+        "voicemail" -> Icons.Default.Voicemail
+        "email" -> Icons.Default.Email
+        "chat" -> Icons.AutoMirrored.Filled.Chat
+        "person_search" -> Icons.Default.PersonSearch
+        "find_in_page" -> Icons.Default.FindInPage
+        "apps" -> Icons.Default.Apps
+        "notification_important" -> Icons.Default.NotificationImportant
+        "schedule" -> Icons.Default.Schedule
+        "wb_sunny" -> Icons.Default.WbSunny
+        "nights_stay" -> Icons.Default.NightsStay
+        "brightness_medium" -> Icons.Default.BrightnessMedium
+        "public" -> Icons.Default.Public
+        "record_voice_over" -> Icons.Default.RecordVoiceOver
+        "notifications" -> Icons.Default.Notifications
+        "volume_up" -> Icons.Default.VolumeUp
+        "music_note" -> Icons.Default.MusicNote
+        "audiotrack" -> Icons.Default.Audiotrack
+        "notifications_active" -> Icons.Default.NotificationsActive
+        "headset" -> Icons.Default.Headset
+        "mic" -> Icons.Default.Mic
+        "queue_music" -> Icons.Default.QueueMusic
+        "help" -> Icons.Default.Help
+        else -> Icons.Default.Circle
+    }
+}
+
+@Composable
 fun PagedNodePalette(
     onDismiss: () -> Unit,
     onSelect: (AutomationComponent) -> Unit
@@ -334,31 +406,42 @@ fun PagedNodePalette(
         },
         containerColor = Color(0xFF1E1E1E),
         text = {
-            Column(modifier = Modifier.height(300.dp)) {
-                when (currentPage) {
-                    0 -> PalettePage(listOf(
-                        Trigger.WiFiConnected,
-                        Trigger.PowerConnected,
-                        Trigger.BatteryLevelBelow(),
-                        Trigger.ScreenOn,
-                        Trigger.BluetoothOn,
-                        Trigger.TimeOfDay()
-                    ), onSelect)
-                    1 -> PalettePage(listOf(
-                        Condition.IsConnectedToWiFi,
-                        Condition.IsCharging,
-                        Condition.ScreenIsOn,
-                        Condition.StorageFreeAbove()
-                    ), onSelect)
-                    2 -> PalettePage(listOf(
-                        Action.Speak(),
-                        Action.ShowNotification(),
-                        Action.Vibrate(),
-                        Action.SetVolume(),
-                        Action.Delay(),
-                        Action.ToggleWiFi
-                    ), onSelect)
+            Column(modifier = Modifier.height(400.dp)) {
+                val components = when (currentPage) {
+                    0 -> listOf(
+                        Trigger.SheetEdited, Trigger.MentionedInComment, Trigger.CommentAdded,
+                        Trigger.CommentResolved, Trigger.AccessRequestReceived, Trigger.SpreadsheetShared,
+                        Trigger.GSheetFileCreated, Trigger.CsvExported, Trigger.XlsxExported, Trigger.FileCreated(),
+                        Trigger.ScreenOn, Trigger.ScreenOff, Trigger.ScreenUnlocked,
+                        Trigger.PowerConnected, Trigger.PowerDisconnected,
+                        Trigger.BatteryLevelAbove(), Trigger.BatteryLevelBelow(),
+                        Trigger.AirplaneModeOn, Trigger.ScreenshotTaken,
+                        Trigger.WiFiConnected, Trigger.WiFiDisconnected, Trigger.SpecificWiFiConnected(),
+                        Trigger.BluetoothOn, Trigger.BluetoothOff, Trigger.BluetoothDeviceConnected(),
+                        Trigger.GeofenceEnter(), Trigger.GeofenceExit(),
+                        Trigger.ActivityWalking, Trigger.ActivityDriving,
+                        Trigger.SmsReceived, Trigger.SmsFromContact(), Trigger.MmsReceived,
+                        Trigger.IncomingCall, Trigger.CallAnswered, Trigger.CallEnded,
+                        Trigger.MissedCall, Trigger.VoicemailReceived,
+                        Trigger.EmailReceived(), Trigger.MessagingAppNotification(),
+                        Trigger.ContactStatusChanged(), Trigger.NotificationKeyword(),
+                        Trigger.AppOpened(), Trigger.NotificationMatches(),
+                        Trigger.TimeOfDay(), Trigger.Sunrise, Trigger.Sunset,
+                        Trigger.LightSensorThreshold(), Trigger.WebsiteContentChanged(),
+                        Trigger.MusicStateChanged(), Trigger.AppPlayingAudio(), Trigger.VolumeChanged(),
+                        Trigger.RingerModeChanged(), Trigger.AudioDeviceConnected(),
+                        Trigger.MicrophoneActivated, Trigger.MediaMetadataChanged
+                    )
+                    1 -> listOf(
+                        Condition.IsConnectedToWiFi, Condition.IsCharging, Condition.ScreenIsOn
+                    )
+                    2 -> listOf(
+                        Action.Speak(), Action.ShowNotification(), Action.SetVolume(), Action.ToggleWiFi
+                    )
+                    else -> emptyList()
                 }
+                
+                PalettePage(components, onSelect)
             }
         },
         confirmButton = {},
@@ -371,13 +454,30 @@ fun PagedNodePalette(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PalettePage(options: List<AutomationComponent>, onSelect: (AutomationComponent) -> Unit) {
-    FlowRow(
+    val grouped = options.groupBy { it.category }
+    
+    androidx.compose.foundation.lazy.LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        options.forEach { opt ->
-            PaletteItem(opt.displayName, Icons.Default.Circle, { onSelect(opt) })
+        grouped.forEach { (category, items) ->
+            item {
+                Text(
+                    text = category,
+                    color = Color(0xFF00E5FF),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items.forEach { opt ->
+                        PaletteItem(opt.displayName, getIconForName(opt.icon), { onSelect(opt) })
+                    }
+                }
+            }
         }
     }
 }

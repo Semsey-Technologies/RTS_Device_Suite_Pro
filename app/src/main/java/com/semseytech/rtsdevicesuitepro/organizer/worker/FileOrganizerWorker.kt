@@ -1,8 +1,14 @@
 package com.semseytech.rtsdevicesuitepro.organizer.worker
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.ListenableWorker.Result
 import com.semseytech.rtsdevicesuitepro.organizer.data.OrganizerDatabase
@@ -21,6 +27,30 @@ class FileOrganizerWorker(
     workerParams: WorkerParameters
 ) : CoroutineWorker(context, workerParams) {
 
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        val channelId = "organizer_worker_channel"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId, "File Organizer",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(channel)
+        }
+
+        val notification = NotificationCompat.Builder(applicationContext, channelId)
+            .setContentTitle("Organizing Files")
+            .setContentText("Applying rules to your folders...")
+            .setSmallIcon(android.R.drawable.ic_menu_manage)
+            .build()
+
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ForegroundInfo(2001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            ForegroundInfo(2001, notification)
+        }
+    }
+
     override suspend fun doWork(): Result {
         Log.d(TAG, "Starting organization work...")
         val database = OrganizerDatabase.getDatabase(applicationContext)
@@ -33,8 +63,10 @@ class FileOrganizerWorker(
 
         rules.forEach { rule ->
             if (rule.isEnabled) {
-                Log.d(TAG, "Processing rule: ${rule.name} (${rule.sourcePath} -> ${rule.targetPath})")
-                processRule(rule)
+                Log.d(TAG, "Processing rule: ${rule.name} (Sources: ${rule.sourcePaths.size} -> ${rule.targetPath})")
+                rule.sourcePaths.forEach { path ->
+                    processPath(path, rule)
+                }
             } else {
                 Log.d(TAG, "Rule ${rule.name} is disabled, skipping")
             }
@@ -43,16 +75,16 @@ class FileOrganizerWorker(
         return Result.success()
     }
 
-    private fun processRule(rule: OrganizerRule) {
-        val sourceDir = File(rule.sourcePath)
+    private fun processPath(path: String, rule: OrganizerRule) {
+        val sourceDir = File(path)
         val targetDir = File(rule.targetPath)
 
         if (!sourceDir.exists()) {
-            Log.e(TAG, "Source directory does not exist: ${rule.sourcePath}")
+            Log.e(TAG, "Source directory does not exist: $path")
             return
         }
         if (!sourceDir.isDirectory) {
-            Log.e(TAG, "Source path is not a directory: ${rule.sourcePath}")
+            Log.e(TAG, "Source path is not a directory: $path")
             return
         }
         
@@ -62,7 +94,7 @@ class FileOrganizerWorker(
         }
 
         val files = sourceDir.listFiles()
-        Log.d(TAG, "Found ${files?.size ?: 0} items in source directory")
+        Log.d(TAG, "Found ${files?.size ?: 0} items in $path")
 
         files?.forEach { file ->
             if (shouldMove(file, rule)) {

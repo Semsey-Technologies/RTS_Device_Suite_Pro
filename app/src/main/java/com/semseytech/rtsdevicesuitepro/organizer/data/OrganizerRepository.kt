@@ -30,10 +30,20 @@ class OrganizerRepository(private val dao: OrganizerDao) {
     }
 
     private fun OrganizerRuleEntity.toDomain(): OrganizerRule {
+        val paths = try {
+            if (sourcePathsJson.startsWith("[")) {
+                gson.fromJson(sourcePathsJson, Array<String>::class.java).toList()
+            } else {
+                listOf(sourcePathsJson)
+            }
+        } catch (e: Exception) {
+            listOf(sourcePathsJson)
+        }
+        
         return OrganizerRule(
             id = id,
             name = name,
-            sourcePath = sourcePath,
+            sourcePaths = paths,
             targetPath = targetPath,
             fileTypes = gson.fromJson(fileTypesJson, Array<String>::class.java).toList(),
             trigger = gson.fromJson(triggerJson, RuleTrigger::class.java),
@@ -46,7 +56,7 @@ class OrganizerRepository(private val dao: OrganizerDao) {
         return OrganizerRuleEntity(
             id = id,
             name = name,
-            sourcePath = sourcePath,
+            sourcePathsJson = gson.toJson(sourcePaths),
             targetPath = targetPath,
             fileTypesJson = gson.toJson(fileTypes),
             triggerJson = gson.toJson(trigger),

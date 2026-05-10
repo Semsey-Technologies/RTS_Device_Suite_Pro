@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [BatteryUsageEntity::class], version = 1, exportSchema = false)
+@Database(entities = [BatteryUsageEntity::class], version = 3, exportSchema = false)
 abstract class BatteryDatabase : RoomDatabase() {
     abstract fun batteryDao(): BatteryDao
 
@@ -19,7 +19,9 @@ abstract class BatteryDatabase : RoomDatabase() {
                     context.applicationContext,
                     BatteryDatabase::class.java,
                     "battery_usage_database"
-                ).build()
+                )
+                    .fallbackToDestructiveMigration(true)
+                    .build()
                 INSTANCE = instance
                 instance
             }

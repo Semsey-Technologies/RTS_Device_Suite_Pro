@@ -6,6 +6,7 @@ import android.os.Build
 import android.provider.Telephony
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -41,7 +42,8 @@ import com.semseytech.rtsdevicesuitepro.ui.theme.ThemeManager
 @Composable
 fun RestoreScreen(
     viewModel: RestoreViewModel = viewModel(),
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    onViewResults: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -198,6 +200,7 @@ fun RestoreScreen(
             } else if (uiState.report != null) {
                 RestoreReportView(
                     report = uiState.report!!,
+                    onViewResults = onViewResults,
                     onDismiss = { viewModel.loadArchive(uiState.selectedUri!!) } // Reload to reset state
                 )
             } else if (uiState.categories.isEmpty()) {
@@ -333,7 +336,7 @@ fun MasterRestoreButton(isSelected: Boolean, onToggle: () -> Unit) {
 }
 
 @Composable
-fun RestoreReportView(report: RestoreReport, onDismiss: () -> Unit) {
+fun RestoreReportView(report: RestoreReport, onViewResults: () -> Unit, onDismiss: () -> Unit) {
     val currentTheme = LocalTheme.current
     Column(
         modifier = Modifier
@@ -377,11 +380,21 @@ fun RestoreReportView(report: RestoreReport, onDismiss: () -> Unit) {
         Spacer(Modifier.height(24.dp))
         
         Button(
-            onClick = onDismiss,
+            onClick = onViewResults,
             modifier = Modifier.fillMaxWidth().height(48.dp),
             colors = ButtonDefaults.buttonColors(containerColor = currentTheme.accentColor)
         ) {
-            Text("Done", color = Color.Black, fontWeight = FontWeight.Bold)
+            Text("VIEW RESTORED DATA", color = Color.Black, fontWeight = FontWeight.Bold)
+        }
+        
+        Spacer(Modifier.height(12.dp))
+        
+        OutlinedButton(
+            onClick = onDismiss,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            border = BorderStroke(1.dp, currentTheme.accentColor.copy(alpha = 0.5f))
+        ) {
+            Text("Done", color = Color.White)
         }
     }
 }

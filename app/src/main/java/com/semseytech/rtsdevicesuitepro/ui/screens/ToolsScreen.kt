@@ -83,7 +83,9 @@ fun ToolsScreen(onNavigate: (String) -> Unit) {
                 ToolItem("Local ADB Client", "Wireless Debugging utilities", Icons.Default.BugReport, Screen.AdbSetup.route, Color(0xFFFFA500)),
                 ToolItem("Command Terminal", "Direct shell access", Icons.Default.Terminal, Screen.Terminal.route, Color(0xFF00D1FF)),
                 ToolItem("Network Health", "DNS & Signal optimization", Icons.Default.NetworkCheck, Screen.Network.route, Color(0xFF00BFFF)),
-                ToolItem("Automation Engine", "Configure auto-optimization", Icons.Outlined.AutoFixHigh, Screen.Automation.route, Color(0xFFFF0033))
+                ToolItem("Secure Wipe Suite", "Permanently destroy sensitive data", Icons.Default.DeleteForever, Screen.WipeSuite.route, Color(0xFFFF4500)),
+                ToolItem("Automation Engine", "Configure auto-optimization", Icons.Outlined.AutoFixHigh, Screen.Automation.route, Color(0xFFFF0033)),
+                ToolItem("Restored Data", "View & extract backup contents", Icons.Default.Visibility, Screen.ViewBackups.route, Color(0xFF0084FF))
             )
 
             LazyVerticalGrid(

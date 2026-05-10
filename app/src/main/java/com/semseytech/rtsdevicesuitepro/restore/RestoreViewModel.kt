@@ -17,6 +17,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.IOException
+import java.io.FileInputStream
 
 class RestoreViewModel(application: Application) : AndroidViewModel(application) {
     private val TAG = "RestoreViewModel"
@@ -42,57 +45,73 @@ class RestoreViewModel(application: Application) : AndroidViewModel(application)
                     Log.d(TAG, "Could not take persistable permission (normal for non-SAF URIs)")
                 }
 
-                // Get original filename safely - do this BEFORE opening stream as it might provide clues
+                // Get original filename and size safely - do this BEFORE opening stream
+                var fileSize = -1L
                 val fileName = try {
-                    val projection = arrayOf(android.provider.OpenableColumns.DISPLAY_NAME)
+                    val projection = arrayOf(
+                        android.provider.OpenableColumns.DISPLAY_NAME,
+                        android.provider.OpenableColumns.SIZE
+                    )
                     context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
                         if (cursor.moveToFirst()) {
                             val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                            if (sizeIndex != -1) fileSize = cursor.getLong(sizeIndex)
                             if (nameIndex != -1) cursor.getString(nameIndex) else null
                         } else null
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Could not query display name, using default", e)
+                    Log.w(TAG, "Could not query file info, using default", e)
                     null
                 } ?: "restore_temp_archive.zip"
 
-                Log.d(TAG, "Opening input stream for: $fileName")
+                Log.d(TAG, "Opening input stream for: $fileName (Size: $fileSize bytes)")
 
-                // Robust stream opening for SAF/Samsung/Google Drive
-                val inputStream = try {
-                    context.contentResolver.openInputStream(uri)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Primary openInputStream failed: ${e.message}")
-                    
-                    // Fallback 1: openAssetFileDescriptor (often handles cloud files better)
+                // Robust stream opening for SAF/Samsung/Google Drive/Cloud
+                var inputStream: InputStream? = null
+                var lastError: Exception? = null
+
+                if (uri.scheme == "file") {
                     try {
-                        context.contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()
-                    } catch (e2: Exception) {
-                        Log.w(TAG, "AssetFileDescriptor fallback failed: ${e2.message}")
-                        
-                        // Fallback 2: openTypedAssetFileDescriptor (specifically for cloud files)
+                        inputStream = FileInputStream(uri.path!!)
+                    } catch (e: Exception) {
+                        lastError = e
+                    }
+                } else {
+                    val methods = listOf(
+                        "openInputStream" to { context.contentResolver.openInputStream(uri) },
+                        "openFileDescriptor" to { context.contentResolver.openFileDescriptor(uri, "r")?.let { android.os.ParcelFileDescriptor.AutoCloseInputStream(it) } },
+                        "openAssetFileDescriptor" to { context.contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream() },
+                        "openTypedAssetFileDescriptor" to { 
+                            val mimeType = try { context.contentResolver.getType(uri) } catch(e: Exception) { null } ?: "*/*"
+                            context.contentResolver.openTypedAssetFileDescriptor(uri, mimeType, null)?.createInputStream() 
+                        }
+                    )
+
+                    for ((name, method) in methods) {
                         try {
-                            context.contentResolver.openTypedAssetFileDescriptor(uri, "*/*", null)?.createInputStream()
-                        } catch (e3: Exception) {
-                            Log.w(TAG, "TypedAssetFileDescriptor fallback failed: ${e3.message}")
-                            
-                            // Fallback 3: openFileDescriptor with ParcelFileDescriptor
-                            try {
-                                context.contentResolver.openFileDescriptor(uri, "r")?.let { pfd ->
-                                    android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd)
-                                }
-                            } catch (e4: Exception) {
-                                Log.e(TAG, "All opening methods failed", e4)
-                                null
+                            val stream = method()
+                            if (stream != null) {
+                                inputStream = stream
+                                Log.d(TAG, "Successfully opened stream using $name")
+                                break
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "$name failed: ${e.message}")
+                            // Prefer keeping exceptions that contain "Cello" as they are most descriptive for Samsung/Drive
+                            if (lastError == null || e.message?.contains("Cello") == true) {
+                                lastError = e
                             }
                         }
                     }
-                } ?: throw java.io.IOException("Failed to open input stream for URI: $uri. If this is a cloud file (Google Drive), please ensure it is downloaded or try moving it to Internal Storage.")
+                }
+
+                val finalInputStream = inputStream ?: throw lastError ?: IOException("Failed to open input stream for URI: $uri. If this is a cloud file (Google Drive), please ensure it is downloaded or try moving it to Internal Storage.")
 
                 Log.d(TAG, "Saving to temp file: $fileName")
                 val tempFile = File(context.cacheDir, fileName)
                 
-                inputStream.use { input ->
+                finalInputStream.use { input ->
                     FileOutputStream(tempFile).use { output ->
                         input.copyTo(output)
                     }
@@ -121,17 +140,29 @@ class RestoreViewModel(application: Application) : AndroidViewModel(application)
                     val manifest = gson.fromJson(manifestJson, BackupManifest::class.java)
                     
                     val categories = manifest.entries.groupBy { 
-                        if (it.itemType == "JsonData") "JsonData_${it.category}" else it.itemType 
+                        when (it.itemType) {
+                            "JsonData" -> "JsonData_${it.category}"
+                            "UserFile" -> "UserFile_${it.category}"
+                            else -> it.itemType
+                        }
                     }.map { (groupKey, entries) ->
                         val first = entries.first()
                         val type = first.itemType
-                        val catName = when (type) {
-                            "SmsThread" -> "SMS/MMS Threads"
-                            "CallLog" -> "Call Logs"
-                            "Contact" -> "Contacts"
-                            "Apk" -> "Installed APKs"
-                            "UserFile" -> first.category
-                            "JsonData" -> first.category.replaceFirstChar { it.uppercase() } ?: "Data"
+                        val catName = when {
+                            type == "SmsThread" -> "SMS/MMS Threads"
+                            type == "CallLog" -> "Call Logs"
+                            type == "Contact" -> "Contacts"
+                            type == "Apk" -> "Installed APKs"
+                            type == "UserFile" -> when (first.category) {
+                                "Pictures" -> "Photos & Images"
+                                "Videos" -> "Video Recordings"
+                                "Audio" -> "Audio & Music"
+                                "DCIM" -> "Camera Media (DCIM)"
+                                "Documents" -> "Documents"
+                                "Downloads" -> "Downloads"
+                                else -> first.category
+                            }
+                            type == "JsonData" -> first.category.replaceFirstChar { it.uppercase() } ?: "Data"
                             else -> type
                         }
 
@@ -140,26 +171,44 @@ class RestoreViewModel(application: Application) : AndroidViewModel(application)
                             when (catId) {
                                 "calls" -> if (callsFile.exists()) {
                                     val callType = object : TypeToken<List<BackupItem.CallLogEntry>>() {}.type
-                                    gson.fromJson<List<BackupItem.CallLogEntry>>(callsFile.readText(), callType)
+                                    gson.fromJson<List<BackupItem.CallLogEntry>>(callsFile.readText(), callType).map { it.copy(isSelected = false) }
                                 } else emptyList()
                                 "contacts" -> if (contactsFile.exists()) {
                                     val contactType = object : TypeToken<List<BackupItem.Contact>>() {}.type
-                                    gson.fromJson<List<BackupItem.Contact>>(contactsFile.readText(), contactType)
+                                    gson.fromJson<List<BackupItem.Contact>>(contactsFile.readText(), contactType).map { it.copy(isSelected = false) }
                                 } else emptyList()
                                 "settings" -> if (settingsFile.exists()) {
                                     val settingType = object : TypeToken<List<BackupItem.SystemSetting>>() {}.type
-                                    gson.fromJson<List<BackupItem.SystemSetting>>(settingsFile.readText(), settingType)
+                                    gson.fromJson<List<BackupItem.SystemSetting>>(settingsFile.readText(), settingType).map { it.copy(isSelected = false) }
                                 } else emptyList()
-                                else -> entries.map { createBackupItemFromEntry(it) }
+                                else -> entries.map { createBackupItemFromEntry(it).let { item ->
+                                    when(item) {
+                                        is BackupItem.SmsMessage -> item.copy(isSelected = false)
+                                        is BackupItem.CallLogEntry -> item.copy(isSelected = false)
+                                        is BackupItem.Contact -> item.copy(isSelected = false)
+                                        is BackupItem.Apk -> item.copy(isSelected = false)
+                                        is BackupItem.UserFile -> item.copy(isSelected = false)
+                                        is BackupItem.SystemSetting -> item.copy(isSelected = false)
+                                    }
+                                } }
                             }
                         } else {
-                            entries.map { createBackupItemFromEntry(it) }
+                            entries.map { createBackupItemFromEntry(it).let { item ->
+                                when(item) {
+                                    is BackupItem.SmsMessage -> item.copy(isSelected = false)
+                                    is BackupItem.CallLogEntry -> item.copy(isSelected = false)
+                                    is BackupItem.Contact -> item.copy(isSelected = false)
+                                    is BackupItem.Apk -> item.copy(isSelected = false)
+                                    is BackupItem.UserFile -> item.copy(isSelected = false)
+                                    is BackupItem.SystemSetting -> item.copy(isSelected = false)
+                                }
+                            } }
                         }
 
                         BackupCategory(
                             id = groupKey.lowercase(),
                             name = catName,
-                            items = items
+                            items = items.distinctBy { it.id }
                         )
                     }
                     
@@ -177,12 +226,13 @@ class RestoreViewModel(application: Application) : AndroidViewModel(application)
                 tempDir.deleteRecursively()
             } catch (e: Exception) {
                 Log.e(TAG, "Load failed", e)
+                val fullError = e.toString()
                 val errorMessage = when {
-                    e.message?.contains("Cello error 8") == true -> 
-                        "Load failed (Samsung error 8). Please try selecting the file directly from 'Internal Storage' instead of 'Recent files'."
-                    e.message?.contains("Cello error 2") == true ->
+                    fullError.contains("Cello error 8") -> 
+                        "Load failed (Samsung error 8). This usually happens with cloud files. Please try downloading the file to Internal Storage or picking it from 'Downloads' instead of 'Recent files'."
+                    fullError.contains("Cello error 2") ->
                         "Load failed (Samsung error 2: Access Denied). Please ensure the file is not in a protected folder or try copying it to Downloads first."
-                    e.message?.contains("ope: Cello error 2") == true ->
+                    fullError.contains("ope: Cello error 2") ->
                         "Load failed (Samsung error 2). Access was denied by the system. Try moving the file to your Downloads folder and picking it from there."
                     else -> "Load failed: ${e.message}"
                 }
@@ -238,6 +288,7 @@ class RestoreViewModel(application: Application) : AndroidViewModel(application)
                 when (entry.category) {
                     "calls" -> BackupItem.CallLogEntry(entry.identifier, entry.itemName, "History", entry.date, 0L, size = entry.size)
                     "contacts" -> BackupItem.Contact(entry.identifier, entry.itemName, emptyList(), emptyList(), size = entry.size, date = entry.date)
+                    "settings" -> BackupItem.SystemSetting(entry.identifier, entry.itemName, "", "Settings", entry.date, size = entry.size)
                     else -> BackupItem.UserFile(entry.identifier, entry.itemName, entry.size, "", "", entry.date, entry.category)
                 }
             }

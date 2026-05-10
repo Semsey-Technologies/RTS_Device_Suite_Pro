@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">RTS Device Suite Pro</string>
+    <string name="accessibility_service_description">Used by RTS Automation to detect app events and system interactions for user-defined rules.</string>
 </resources>

@@ -1,5 +1,7 @@
 package com.semseytech.rtsdevicesuitepro.filemanager
 
+import com.semseytech.rtsdevicesuitepro.filemanager.data.FavoriteLocation
+
 data class PaneState(
     val currentPath: String = "/storage/emulated/0",
     val items: List<ExplorerFileItem> = emptyList(),
@@ -18,7 +20,8 @@ data class FileExplorerState(
     val isSplitScreen: Boolean = false,
     val isSystemAccessEnabled: Boolean = false,
     val isScanningNetwork: Boolean = false,
-    val networkNodes: List<NetworkNode> = emptyList()
+    val networkNodes: List<NetworkNode> = emptyList(),
+    val favorites: List<FavoriteLocation> = emptyList()
 )
 
 data class NetworkNode(

@@ -19,7 +19,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.semseytech.rtsdevicesuitepro.storage.analyzer.DeepDark
 import com.semseytech.rtsdevicesuitepro.storage.analyzer.NeonBlue
-import com.semseytech.rtsdevicesuitepro.storage.analyzer.NeonGreen
 
 data class PermissionInfo(
     val title: String,
@@ -106,6 +105,76 @@ fun PermissionExplanationDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("NOT NOW", color = Color.Gray)
+            }
+        }
+    )
+}
+
+@Composable
+fun PermissionRationaleDialog(
+    permissions: List<String>,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    onNavigateToHelp: () -> Unit
+) {
+    val permissionRequirements = permissions.mapNotNull { PermissionRegistry.getForPermission(it) }
+    
+    if (permissionRequirements.isEmpty()) {
+        onConfirm()
+        return
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { 
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Security, null, tint = NeonBlue)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Permission Needed", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) 
+            }
+        },
+        containerColor = DeepDark,
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    "To use this feature, the app needs the following access:",
+                    color = Color.LightGray,
+                    fontSize = 14.sp
+                )
+                
+                permissionRequirements.forEach { req ->
+                    PermissionItem(
+                        PermissionInfo(
+                            req.title,
+                            req.shortDescription,
+                            req.icon,
+                            req.consequences
+                        )
+                    )
+                }
+
+                Text(
+                    "You can manage these permissions anytime from the Help Center (the ? icon in the top banner).",
+                    color = NeonBlue.copy(alpha = 0.8f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = NeonBlue),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("CONTINUE", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("CANCEL", color = Color.Gray)
             }
         }
     )

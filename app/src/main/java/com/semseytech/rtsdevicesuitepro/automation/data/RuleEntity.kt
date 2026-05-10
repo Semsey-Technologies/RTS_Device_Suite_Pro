@@ -15,6 +15,15 @@ data class RuleGroup(
     val description: String = ""
 )
 
+@Entity(tableName = "flow_graphs")
+data class FlowGraphEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val nodesJson: String,
+    val connectionsJson: String,
+    val isEnabled: Boolean = true
+)
+
 @Entity(
     tableName = "rules",
     foreignKeys = [

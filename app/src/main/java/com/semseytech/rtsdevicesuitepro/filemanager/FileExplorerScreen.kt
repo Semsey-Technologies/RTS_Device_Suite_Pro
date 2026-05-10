@@ -62,6 +62,13 @@ fun FileExplorerScreen(
                 StorageGrid(scale, currentTheme.accentColor, onNavigate)
             }
 
+            if (uiState.favorites.isNotEmpty()) {
+                item {
+                    ExplorerSectionLabel("FAVORITES", currentTheme.accentColor)
+                    FavoritesGrid(uiState.favorites, viewModel, scale, currentTheme.accentColor, onNavigate)
+                }
+            }
+
             if (savedConnections.isNotEmpty()) {
                 item {
                     ExplorerSectionLabel("SAVED CONNECTIONS", currentTheme.accentColor)
@@ -94,6 +101,82 @@ fun FileExplorerScreen(
             viewModel = viewModel,
             onDismiss = { showConnectDialog = null },
             onConnected = { route -> onNavigate(Screen.FileList.createRoute(route)) }
+        )
+    }
+}
+
+@Composable
+fun FavoritesGrid(
+    favorites: List<com.semseytech.rtsdevicesuitepro.filemanager.data.FavoriteLocation>,
+    viewModel: FileExplorerViewModel,
+    scale: Float,
+    accentColor: Color,
+    onNavigate: (String) -> Unit
+) {
+    var favoriteToRename by remember { mutableStateOf<com.semseytech.rtsdevicesuitepro.filemanager.data.FavoriteLocation?>(null) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp * scale)) {
+        favorites.chunked(2).forEach { row ->
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp * scale)) {
+                row.forEach { fav ->
+                    Box(modifier = Modifier.weight(1f)) {
+                        ExplorerTile(
+                            item = ExplorerItem(
+                                fav.name, 
+                                if (fav.type == "SMB") Icons.Default.Dns else Icons.Default.Folder, 
+                                fav.type
+                            ),
+                            accentColor = accentColor,
+                            scale = scale,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            onNavigate(Screen.FileList.createRoute(fav.path))
+                        }
+                        Row(modifier = Modifier.align(Alignment.TopEnd)) {
+                            IconButton(
+                                onClick = { favoriteToRename = fav },
+                                modifier = Modifier.size(32.dp * scale)
+                            ) {
+                                Icon(Icons.Default.Edit, null, tint = Color.Gray, modifier = Modifier.size(14.dp * scale))
+                            }
+                            IconButton(
+                                onClick = { viewModel.removeFavorite(fav) },
+                                modifier = Modifier.size(32.dp * scale)
+                            ) {
+                                Icon(Icons.Default.Close, null, tint = Color.Gray, modifier = Modifier.size(16.dp * scale))
+                            }
+                        }
+                    }
+                }
+                if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+
+    if (favoriteToRename != null) {
+        var newName by remember { mutableStateOf(favoriteToRename!!.name) }
+        AlertDialog(
+            onDismissRequest = { favoriteToRename = null },
+            title = { Text("Rename Favorite", color = accentColor) },
+            text = {
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text("Favorite Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.renameFavorite(favoriteToRename!!, newName)
+                    favoriteToRename = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { favoriteToRename = null }) { Text("Cancel") }
+            },
+            containerColor = Color(0xFF1A1A1A)
         )
     }
 }

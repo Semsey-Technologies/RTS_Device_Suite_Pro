@@ -73,13 +73,16 @@ class StorageAnalyzerRepository(private val context: Context) {
                 recursiveScan(file, categoryMap, largestFiles)
             } else {
                 val category = determineCategory(file.path, null)
+                val (author, tags) = getFileMetadata(file.path, category)
                 val info = FileInfo(
                     name = file.name,
                     path = file.path,
                     size = file.length(),
                     category = category,
                     lastModified = file.lastModified(),
-                    mimeType = getMimeType(file.path)
+                    mimeType = getMimeType(file.path),
+                    author = author,
+                    tags = tags
                 )
                 
                 categoryMap[category]?.let {
@@ -131,7 +134,8 @@ class StorageAnalyzerRepository(private val context: Context) {
 
                 val category = determineCategory(path, mimeType)
                 val uri = getUriForFile(id, category)
-                val info = FileInfo(name, path, size, category, lastMod, mimeType, uri)
+                val (author, tags) = getFileMetadata(path, category)
+                val info = FileInfo(name, path, size, category, lastMod, mimeType, uri, author = author, tags = tags)
 
                 categoryMap[category]?.let { catInfo ->
                     catInfo.count++
@@ -289,6 +293,41 @@ class StorageAnalyzerRepository(private val context: Context) {
             Log.e(TAG, "UNINSTALL FAILED: $packageName", e)
             false
         }
+    }
+
+    private fun getFileMetadata(path: String, category: FileCategory): Pair<String?, List<String>> {
+        var author: String? = null
+        val tags = mutableListOf<String>()
+
+        try {
+            when (category) {
+                FileCategory.IMAGES -> {
+                    val exif = android.media.ExifInterface(path)
+                    author = exif.getAttribute(android.media.ExifInterface.TAG_ARTIST) ?:
+                             exif.getAttribute(android.media.ExifInterface.TAG_COPYRIGHT)
+                    val description = exif.getAttribute(android.media.ExifInterface.TAG_IMAGE_DESCRIPTION)
+                    if (!description.isNullOrEmpty()) tags.add(description)
+                }
+                FileCategory.AUDIO, FileCategory.VIDEOS -> {
+                    val retriever = android.media.MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(path)
+                        author = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST) ?:
+                                 retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST) ?:
+                                 retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_AUTHOR)
+                        
+                        val genre = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_GENRE)
+                        if (!genre.isNullOrEmpty()) tags.add(genre)
+                    } finally {
+                        retriever.release()
+                    }
+                }
+                else -> {}
+            }
+        } catch (e: Exception) {
+            // Silent fail for metadata
+        }
+        return Pair(author, tags)
     }
 
     private fun scanInstalledApps(

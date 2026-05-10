@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.semseytech.rtsdevicesuitepro.model.ModelIntelligence
 import com.semseytech.rtsdevicesuitepro.ui.permissions.PermissionRegistry
 import com.semseytech.rtsdevicesuitepro.ui.permissions.PermissionRequirement
 import com.semseytech.rtsdevicesuitepro.ui.theme.LocalTheme
@@ -130,6 +131,7 @@ fun HelpSection() {
     val context = LocalContext.current
     val currentTheme = LocalTheme.current
     var searchQuery by remember { mutableStateOf("") }
+    var activeTutorial by remember { mutableStateOf<Pair<String, List<String>>?>(null) }
     
     val openUrl = { url: String ->
         try {
@@ -198,9 +200,9 @@ fun HelpSection() {
 
             if (searchQuery.isEmpty()) {
                 item {
-                    val spec = remember { com.semseytech.rtsdevicesuitepro.ui.screens.ModelIntelligence.getSpec(android.os.Build.MANUFACTURER, android.os.Build.MODEL) }
+                    val spec = remember { ModelIntelligence.getSpec(Build.MANUFACTURER, Build.MODEL) }
                     Text(
-                        "YOUR DEVICE: ${android.os.Build.MODEL}",
+                        "YOUR DEVICE: ${Build.MODEL}",
                         style = MaterialTheme.typography.titleMedium,
                         color = currentTheme.accentColor,
                         fontWeight = FontWeight.Bold
@@ -246,14 +248,61 @@ fun HelpSection() {
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    TutorialPlaceholder("How to Create Your First Backup", "Walkthrough - 5 Steps")
+                    TutorialPlaceholder("How to Create Your First Backup", "Walkthrough - 5 Steps") {
+                        activeTutorial = "How to Create Your First Backup" to listOf(
+                            "Open the Backup screen from the dashboard.",
+                            "Select the categories you want to save (Photos, Contacts, etc.).",
+                            "Choose your destination (Internal, SD Card, or Cloud).",
+                            "Tap 'RUN BACKUP' and wait for completion.",
+                            "Verify your backup in the 'View Backups' tool."
+                        )
+                    }
                     Spacer(modifier = Modifier.height(12.dp))
-                    TutorialPlaceholder("Optimizing Your Home Wi-Fi", "Walkthrough - 3 Steps")
+                    TutorialPlaceholder("Optimizing Your Home Wi-Fi", "Walkthrough - 3 Steps") {
+                        activeTutorial = "Optimizing Your Home Wi-Fi" to listOf(
+                            "Go to Network Health and run a 'Wi-Fi Analysis'.",
+                            "Check the 'Channel Overlap' graph for interference.",
+                            "If your channel is crowded, change it in your router settings."
+                        )
+                    }
                     Spacer(modifier = Modifier.height(12.dp))
-                    TutorialPlaceholder("Enabling Developer Mode", "External Guide - System Settings")
+                    TutorialPlaceholder("Enabling Developer Mode", "External Guide - System Settings") {
+                        activeTutorial = "Enabling Developer Mode" to listOf(
+                            "Open your phone's system Settings.",
+                            "Go to 'About Phone'.",
+                            "Tap 'Build Number' 7 times rapidly.",
+                            "Go back to System > Developer Options.",
+                            "Enable 'USB Debugging' and 'Wireless Debugging' if needed for RTS PRO tools."
+                        )
+                    }
                 }
             }
         }
+    }
+
+    if (activeTutorial != null) {
+        AlertDialog(
+            onDismissRequest = { activeTutorial = null },
+            title = { Text(activeTutorial!!.first, fontWeight = FontWeight.Bold, color = currentTheme.accentColor) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    activeTutorial!!.second.forEachIndexed { index, step ->
+                        Row {
+                            Text("${index + 1}.", fontWeight = FontWeight.Bold, color = currentTheme.accentColor)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(step, color = Color.White)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { activeTutorial = null }) {
+                    Text("GOT IT", color = currentTheme.accentColor)
+                }
+            },
+            containerColor = Color(0xFF1A1A1A),
+            textContentColor = Color.White
+        )
     }
 }
 
@@ -300,9 +349,10 @@ fun CommunityLink(label: String, icon: ImageVector, modifier: Modifier = Modifie
 }
 
 @Composable
-fun TutorialPlaceholder(title: String, type: String) {
+fun TutorialPlaceholder(title: String, type: String, onClick: () -> Unit) {
     val currentTheme = LocalTheme.current
     Card(
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.4f)),
         shape = RoundedCornerShape(8.dp)

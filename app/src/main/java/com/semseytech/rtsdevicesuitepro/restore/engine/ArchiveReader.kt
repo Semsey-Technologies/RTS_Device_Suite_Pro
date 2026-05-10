@@ -42,6 +42,28 @@ class ArchiveReader(private val archiveFile: File) {
         }
     }
 
+    fun extractSelective(targetDir: File, wantedPaths: Set<String>, onProgress: (Float, String) -> Unit) {
+        val fileName = archiveFile.name.lowercase()
+        android.util.Log.d("ArchiveReader", "Selectively extracting from $fileName to ${targetDir.absolutePath}")
+        try {
+            when {
+                fileName.endsWith(".7z") -> extractSelective7z(targetDir, wantedPaths, onProgress)
+                fileName.endsWith(".zip") -> extractSelectiveArchive(ZipArchiveInputStream(FileInputStream(archiveFile)), targetDir, wantedPaths, onProgress)
+                fileName.endsWith(".tar") -> extractSelectiveArchive(TarArchiveInputStream(FileInputStream(archiveFile)), targetDir, wantedPaths, onProgress)
+                fileName.endsWith(".tar.gz") || fileName.endsWith(".tgz") -> 
+                    extractSelectiveArchive(TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(FileInputStream(archiveFile)))), targetDir, wantedPaths, onProgress)
+                fileName.endsWith(".tar.bz2") -> 
+                    extractSelectiveArchive(TarArchiveInputStream(BZip2CompressorInputStream(BufferedInputStream(FileInputStream(archiveFile)))), targetDir, wantedPaths, onProgress)
+                fileName.endsWith(".tar.xz") -> 
+                    extractSelectiveArchive(TarArchiveInputStream(XZCompressorInputStream(BufferedInputStream(FileInputStream(archiveFile)))), targetDir, wantedPaths, onProgress)
+                else -> extractSelectiveArchive(ZipArchiveInputStream(FileInputStream(archiveFile)), targetDir, wantedPaths, onProgress)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ArchiveReader", "Selective extraction failed", e)
+            throw e
+        }
+    }
+
     fun extractFile(internalPath: String, targetFile: File) {
         val fileName = archiveFile.name.lowercase()
         try {
@@ -135,6 +157,52 @@ class ArchiveReader(private val archiveFile: File) {
                     }
                 }
                 onProgress(0f, "Extracting: ${entry.name}")
+                entry = input.nextEntry
+            }
+        }
+    }
+
+    private fun extractSelective7z(targetDir: File, wantedPaths: Set<String>, onProgress: (Float, String) -> Unit) {
+        SevenZFile(archiveFile).use { sevenZFile ->
+            var entry = sevenZFile.nextEntry
+            while (entry != null) {
+                if (wantedPaths.any { entry!!.name == it || entry!!.name.startsWith("$it/") }) {
+                    val file = File(targetDir, entry.name)
+                    if (entry.isDirectory) {
+                        file.mkdirs()
+                    } else {
+                        file.parentFile?.mkdirs()
+                        FileOutputStream(file).use { output ->
+                            val buffer = ByteArray(8192)
+                            var n: Int
+                            while (sevenZFile.read(buffer).also { n = it } != -1) {
+                                output.write(buffer, 0, n)
+                            }
+                        }
+                    }
+                    onProgress(0f, "Extracted: ${entry.name}")
+                }
+                entry = sevenZFile.nextEntry
+            }
+        }
+    }
+
+    private fun extractSelectiveArchive(ais: ArchiveInputStream<*>, targetDir: File, wantedPaths: Set<String>, onProgress: (Float, String) -> Unit) {
+        ais.use { input ->
+            var entry: ArchiveEntry? = input.nextEntry
+            while (entry != null) {
+                if (wantedPaths.any { entry!!.name == it || entry!!.name.startsWith("$it/") }) {
+                    val file = File(targetDir, entry.name)
+                    if (entry.isDirectory) {
+                        file.mkdirs()
+                    } else {
+                        file.parentFile?.mkdirs()
+                        FileOutputStream(file).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    onProgress(0f, "Extracted: ${entry.name}")
+                }
                 entry = input.nextEntry
             }
         }

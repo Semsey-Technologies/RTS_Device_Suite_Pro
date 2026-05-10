@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -28,6 +29,10 @@ class BackupWorker(
     private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val CHANNEL_ID = "backup_channel"
     private val NOTIFICATION_ID = 1001
+
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        return createForegroundInfo(0f, "Preparing backup...")
+    }
 
     override suspend fun doWork(): Result {
         val inputFilePath = inputData.getString("input_file_path") ?: return Result.failure()
@@ -140,7 +145,11 @@ class BackupWorker(
             .setContentIntent(pendingIntent)
             .build()
 
-        return ForegroundInfo(NOTIFICATION_ID, notification)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            ForegroundInfo(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun showProgressNotification(progress: Float, status: String) {

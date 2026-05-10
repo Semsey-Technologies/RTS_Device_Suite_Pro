@@ -22,7 +22,7 @@ import com.semseytech.rtsdevicesuitepro.archive.model.*
 fun ArchiveDialog(
     initialDir: String,
     onDismiss: () -> Unit,
-    onConfirm: (File, ArchiveOptions) -> Unit
+    onConfirm: (String, ArchiveOptions) -> Unit
 ) {
     var archiveName by remember { mutableStateOf("archive") }
     var options by remember { mutableStateOf(ArchiveOptions()) }
@@ -215,8 +215,7 @@ fun ArchiveDialog(
                     TextButton(onClick = onDismiss) { Text("Cancel") }
                     Button(
                         onClick = { 
-                            val file = java.io.File(initialDir, "$archiveName.${options.format.extension}")
-                            onConfirm(file, options.copy(password = password)) 
+                            onConfirm(archiveName, options.copy(password = password))
                         },
                         enabled = archiveName.isNotBlank() && (password == reenterPassword)
                     ) {

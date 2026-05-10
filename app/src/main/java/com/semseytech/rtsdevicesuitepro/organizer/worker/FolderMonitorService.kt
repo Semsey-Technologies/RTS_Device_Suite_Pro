@@ -6,6 +6,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.FileObserver
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.*
 import com.semseytech.rtsdevicesuitepro.organizer.data.OrganizerDatabase
@@ -23,12 +24,23 @@ class FolderMonitorService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1, createNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            startForeground(1, createNotification())
-        }
+        startForegroundWithType()
         refreshObservers()
+    }
+
+    private fun startForegroundWithType() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(1, createNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                @Suppress("DEPRECATION")
+                startForeground(1, createNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                startForeground(1, createNotification())
+            }
+        } catch (e: Exception) {
+            Log.e("FolderMonitorService", "Failed to start foreground service", e)
+        }
     }
 
     private fun refreshObservers() {
@@ -43,25 +55,26 @@ class FolderMonitorService : Service() {
 
             // Start new observers for rules with OnFolderModified trigger
             rules.filter { it.isEnabled && it.trigger is RuleTrigger.OnFolderModified }.forEach { rule ->
-                val path = rule.sourcePath
-                if (observers.containsKey(path)) return@forEach
+                rule.sourcePaths.forEach { path ->
+                    if (observers.containsKey(path)) return@forEach
 
-                val observer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    object : FileObserver(File(path), CREATE or MOVED_TO) {
-                        override fun onEvent(event: Int, pathInFolder: String?) {
-                            triggerWorker()
+                    val observer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        object : FileObserver(File(path), CREATE or MOVED_TO) {
+                            override fun onEvent(event: Int, pathInFolder: String?) {
+                                triggerWorker()
+                            }
+                        }
+                    } else {
+                        @Suppress("DEPRECATION")
+                        object : FileObserver(path, CREATE or MOVED_TO) {
+                            override fun onEvent(event: Int, pathInFolder: String?) {
+                                triggerWorker()
+                            }
                         }
                     }
-                } else {
-                    @Suppress("DEPRECATION")
-                    object : FileObserver(path, CREATE or MOVED_TO) {
-                        override fun onEvent(event: Int, pathInFolder: String?) {
-                            triggerWorker()
-                        }
-                    }
+                    observer.startWatching()
+                    observers[path] = observer
                 }
-                observer.startWatching()
-                observers[path] = observer
             }
         }
     }
@@ -79,6 +92,8 @@ class FolderMonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startForegroundWithType()
+
         if (intent?.action == "REFRESH") {
             refreshObservers()
         }

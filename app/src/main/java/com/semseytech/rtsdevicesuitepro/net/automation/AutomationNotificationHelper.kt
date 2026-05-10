@@ -10,14 +10,21 @@ import androidx.core.app.NotificationCompat
 import com.semseytech.rtsdevicesuitepro.MainActivity
 
 object AutomationNotificationHelper {
-    private const val CHANNEL_ID = "automation_channel"
-    private const val CHANNEL_NAME = "Automation Notifications"
 
-    fun showNotification(context: Context, title: String, message: String) {
+    fun showNotification(context: Context, title: String, message: String, category: String = "general") {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
+        val channelId = "automation_$category"
+        val channelName = when(category) {
+            "cleaner" -> "Auto Cleaner"
+            "backup" -> "Auto Backup"
+            "security" -> "Security Alerts"
+            "network" -> "Network Optimizations"
+            else -> "General Automations"
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_DEFAULT)
+            val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_DEFAULT)
             notificationManager.createNotificationChannel(channel)
         }
 
@@ -26,7 +33,7 @@ object AutomationNotificationHelper {
         }
         val pendingIntent = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
             .setContentText(message)

@@ -54,7 +54,10 @@ fun SetupNavGraph(navController: NavHostController) {
             BackupScreen(onNavigateToRestore = { navController.navigate(Screen.Restore.route) })
         }
         composable(route = Screen.Restore.route) {
-            RestoreScreen(onBack = { navController.popBackStack() })
+            RestoreScreen(
+                onBack = { navController.popBackStack() },
+                onViewResults = { navController.navigate(Screen.ViewBackups.route) }
+            )
         }
         composable(route = Screen.Recovery.route) {
             val context = LocalContext.current
@@ -146,14 +149,43 @@ fun SetupNavGraph(navController: NavHostController) {
             )
         }
         composable(route = Screen.Automation.route) {
+            val context = LocalContext.current
+            val viewModel: com.semseytech.rtsdevicesuitepro.automation.ui.AutomationViewModel = viewModel(
+                factory = object : ViewModelProvider.Factory {
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                        val vm = com.semseytech.rtsdevicesuitepro.automation.ui.AutomationViewModel(context.applicationContext as Application)
+                        // Try to get engine from service if available
+                        com.semseytech.rtsdevicesuitepro.automation.engine.AutomationService.getEngine()?.let { 
+                            vm.setEngine(it) 
+                        }
+                        return vm as T
+                    }
+                }
+            )
             com.semseytech.rtsdevicesuitepro.automation.ui.AutomationScreen(
                 onBackClick = { navController.popBackStack() },
-                onNavigate = { route -> navController.navigate(route) }
+                onNavigate = { route -> navController.navigate(route) },
+                viewModel = viewModel
             )
         }
-        composable(route = Screen.FlowEditor.route) {
+        composable(
+            route = Screen.FlowEditor.route,
+            arguments = listOf(navArgument("flowId") { 
+                type = NavType.StringType
+                nullable = true
+                defaultValue = null
+            })
+        ) { backStackEntry ->
+            val flowId = backStackEntry.arguments?.getString("flowId")
+            val viewModel: com.semseytech.rtsdevicesuitepro.automation.flow.FlowEditorViewModel = viewModel()
+            
+            androidx.compose.runtime.LaunchedEffect(flowId) {
+                flowId?.let { viewModel.loadFlow(it) }
+            }
+
             com.semseytech.rtsdevicesuitepro.automation.flow.ui.FlowEditorScreen(
-                onBackClick = { navController.popBackStack() }
+                onBackClick = { navController.popBackStack() },
+                viewModel = viewModel
             )
         }
         composable(route = Screen.AutomationControls.route) {
@@ -172,6 +204,9 @@ fun SetupNavGraph(navController: NavHostController) {
         }
         composable(route = Screen.Terminal.route) {
             com.semseytech.rtsdevicesuitepro.terminal.ui.TerminalScreen(onBack = { navController.popBackStack() })
+        }
+        composable(route = Screen.WipeSuite.route) {
+            com.semseytech.rtsdevicesuitepro.wipe.ui.WipeSuiteScreen(onNavigate = { route -> navController.navigate(route) })
         }
         composable(route = Screen.BatteryEstimation.route) {
             val context = LocalContext.current
@@ -230,6 +265,18 @@ fun SetupNavGraph(navController: NavHostController) {
                 onBack = { navController.popBackStack() }
             )
         }
+        composable(
+            route = Screen.TextEditor.route,
+            arguments = listOf(navArgument("path") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val path = java.net.URLDecoder.decode(backStackEntry.arguments?.getString("path") ?: "", "UTF-8")
+            val viewModel: com.semseytech.rtsdevicesuitepro.editor.TextEditorViewModel = viewModel()
+            com.semseytech.rtsdevicesuitepro.editor.TextEditorScreen(
+                path = path,
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
         composable(route = Screen.StorageAnalyzer.route) { backStackEntry ->
             val context = LocalContext.current
             val mainActivityEntry = remember(backStackEntry) {
@@ -280,6 +327,17 @@ fun SetupNavGraph(navController: NavHostController) {
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() }
             )
+        }
+        composable(route = Screen.Diagnostics.route) {
+            val context = LocalContext.current
+            val viewModel: com.semseytech.rtsdevicesuitepro.diagnostics.DiagnosticsViewModel = viewModel(
+                factory = object : ViewModelProvider.Factory {
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                        return com.semseytech.rtsdevicesuitepro.diagnostics.DiagnosticsViewModel(context.applicationContext as Application) as T
+                    }
+                }
+            )
+            com.semseytech.rtsdevicesuitepro.diagnostics.ui.DiagnosticsScreen(viewModel = viewModel)
         }
     }
 }

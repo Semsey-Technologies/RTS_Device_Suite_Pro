@@ -74,60 +74,86 @@ class CleanerViewModel(application: Application) : AndroidViewModel(application)
     )
 
     init {
-        performInitialScan()
+        // Only initialize categories with empty items, don't trigger heavy scan automatically
+        _categories.value = listOf(
+            CleanupCategory("dupes", "Duplicate Files", "Removes identical copies of files", Icons.Outlined.ContentCopy),
+            CleanupCategory("contact_dupes", "Duplicate Contacts", "Identical contact entries", Icons.Outlined.Person),
+            CleanupCategory("empty_folders", "Empty Folders", "Removes directories with no content", Icons.Outlined.Folder),
+            CleanupCategory("temp", "Temp & Thumbnails", "Temporary cache and image previews", Icons.Outlined.Cached),
+            CleanupCategory("residual", "Residual Data", "Leftover files from uninstalled apps", Icons.Outlined.DeleteSweep),
+            CleanupCategory("downloads", "Failed Downloads", "Corrupted or incomplete downloads", Icons.Outlined.FileDownloadOff),
+            CleanupCategory("recycle", "Recycle Bin", "Permanently empty deleted items", Icons.Outlined.DeleteOutline, isSelected = false),
+            CleanupCategory("logs", "Call Logs", "Clear recent call history", Icons.Outlined.Call, isSelected = false),
+            CleanupCategory("sms", "SMS Threads", "Clear selected text messages", Icons.Outlined.Sms, isSelected = false)
+        )
     }
 
-    private fun performInitialScan() {
+    fun startScan() {
         viewModelScope.launch(Dispatchers.IO) {
+            if (_state.value == CleanerState.SCANNING) return@launch
+            
             _state.value = CleanerState.SCANNING
             val externalStorage = Environment.getExternalStorageDirectory()
             
-            val duplicates = findDuplicates(externalStorage)
-            val duplicateContacts = findDuplicateContacts()
-            val emptyFolders = findEmptyFolders(externalStorage)
-            val tempFiles = findTempFiles(externalStorage)
+            // Perform all file-based scans in one pass to avoid multiple walks
+            val dupes = mutableListOf<CleanupItem>()
+            val emptyFolders = mutableListOf<CleanupItem>()
+            val tempFiles = mutableListOf<CleanupItem>()
+            val fileMap = mutableMapOf<String, String>() // Key -> Path (save memory)
+            val tempPatterns = listOf(".tmp", ".temp", ".cache", "thumbnails", ".log")
 
-            _categories.value = listOf(
-                CleanupCategory("dupes", "Duplicate Files", "Removes identical copies of files", Icons.Outlined.ContentCopy, items = duplicates),
-                CleanupCategory("contact_dupes", "Duplicate Contacts", "Identical contact entries", Icons.Outlined.Person, items = duplicateContacts),
-                CleanupCategory("empty_folders", "Empty Folders", "Removes directories with no content", Icons.Outlined.Folder, items = emptyFolders),
-                CleanupCategory("temp", "Temp & Thumbnails", "Temporary cache and image previews", Icons.Outlined.Cached, items = tempFiles),
-                CleanupCategory("residual", "Residual Data", "Leftover files from uninstalled apps", Icons.Outlined.DeleteSweep),
-                CleanupCategory("downloads", "Failed Downloads", "Corrupted or incomplete downloads", Icons.Outlined.FileDownloadOff),
-                CleanupCategory("recycle", "Recycle Bin", "Permanently empty deleted items", Icons.Outlined.DeleteOutline, isSelected = false),
-                CleanupCategory("logs", "Call Logs", "Clear recent call history", Icons.Outlined.Call, isSelected = false),
-                CleanupCategory("sms", "SMS Threads", "Clear selected text messages", Icons.Outlined.Sms, isSelected = false)
-            )
+            externalStorage.walkTopDown().onEnter { !it.name.startsWith(".") }.forEach { file ->
+                kotlinx.coroutines.yield()
+                if (file.isFile) {
+                    // Check Temp
+                    if (tempPatterns.any { file.name.contains(it, ignoreCase = true) || file.path.contains(it, ignoreCase = true) }) {
+                        tempFiles.add(CleanupItem(UUID.randomUUID().toString(), file.absolutePath, file.name, file.length()))
+                    } else {
+                        // Check Dupes
+                        val size = file.length()
+                        if (size > 0) {
+                            val hash = FileHasher.calculateMD5(file)
+                            if (hash != null) {
+                                val key = "${hash}_${size}"
+                                if (fileMap.containsKey(key)) {
+                                    dupes.add(CleanupItem(UUID.randomUUID().toString(), file.absolutePath, file.name, size, extraInfo = "Duplicate of file in ${fileMap[key]}"))
+                                } else {
+                                    fileMap[key] = file.parent ?: "root"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Empty folders need bottom-up
+            externalStorage.walkBottomUp().onEnter { !it.name.startsWith(".") }.forEach { file ->
+                kotlinx.coroutines.yield()
+                if (file.isDirectory) {
+                    val children = file.list()
+                    if (children != null && children.isEmpty()) {
+                        emptyFolders.add(CleanupItem(UUID.randomUUID().toString(), file.absolutePath, file.name, 0))
+                    }
+                }
+            }
+
+            val duplicateContacts = findDuplicateContacts()
+
+            _categories.value = _categories.value.map { cat ->
+                when (cat.id) {
+                    "dupes" -> cat.copy(items = dupes)
+                    "contact_dupes" -> cat.copy(items = duplicateContacts)
+                    "empty_folders" -> cat.copy(items = emptyFolders)
+                    "temp" -> cat.copy(items = tempFiles)
+                    else -> cat
+                }
+            }
             _state.value = CleanerState.IDLE
         }
     }
 
     fun refreshScan() {
-        performInitialScan()
-    }
-
-    private fun findDuplicates(root: File): List<CleanupItem> {
-        val fileMap = mutableMapOf<String, File>()
-        val dupes = mutableListOf<CleanupItem>()
-        
-        root.walkTopDown().forEach { file ->
-            if (file.isFile) {
-                val key = "${file.name}_${file.length()}"
-                if (fileMap.containsKey(key)) {
-                    val original = fileMap[key]!!
-                    dupes.add(CleanupItem(
-                        id = UUID.randomUUID().toString(),
-                        path = file.absolutePath,
-                        name = file.name,
-                        sizeBytes = file.length(),
-                        extraInfo = "Duplicate of ${original.name} in ${original.parentFile?.name ?: "root"}"
-                    ))
-                } else {
-                    fileMap[key] = file
-                }
-            }
-        }
-        return dupes
+        startScan()
     }
 
     private fun findDuplicateContacts(): List<CleanupItem> {
@@ -222,40 +248,6 @@ class CleanerViewModel(application: Application) : AndroidViewModel(application)
         
         Log.d(TAG, "Found ${dupes.size} duplicate contacts")
         return dupes.distinctBy { it.id }
-    }
-
-    private fun findEmptyFolders(root: File): List<CleanupItem> {
-        val emptyFolders = mutableListOf<CleanupItem>()
-        root.walkBottomUp().forEach { file ->
-            if (file.isDirectory) {
-                val children = file.list()
-                if (children != null && children.isEmpty()) {
-                    emptyFolders.add(CleanupItem(
-                        id = UUID.randomUUID().toString(),
-                        path = file.absolutePath,
-                        name = file.name,
-                        sizeBytes = 0
-                    ))
-                }
-            }
-        }
-        return emptyFolders
-    }
-
-    private fun findTempFiles(root: File): List<CleanupItem> {
-        val tempItems = mutableListOf<CleanupItem>()
-        val tempPatterns = listOf(".tmp", ".temp", ".cache", "thumbnails", ".log")
-        root.walkTopDown().forEach { file ->
-            if (file.isFile && tempPatterns.any { file.name.contains(it, ignoreCase = true) || file.path.contains(it, ignoreCase = true) }) {
-                tempItems.add(CleanupItem(
-                    id = UUID.randomUUID().toString(),
-                    path = file.absolutePath,
-                    name = file.name,
-                    sizeBytes = file.length()
-                ))
-            }
-        }
-        return tempItems
     }
 
     fun toggleCategoryExpansion(id: String) {

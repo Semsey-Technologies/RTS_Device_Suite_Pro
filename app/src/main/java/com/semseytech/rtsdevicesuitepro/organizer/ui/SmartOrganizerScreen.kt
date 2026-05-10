@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.semseytech.rtsdevicesuitepro.organizer.model.OrganizerRule
 import com.semseytech.rtsdevicesuitepro.ui.theme.LocalTheme
+import androidx.compose.material.icons.filled.Edit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,6 +34,7 @@ fun SmartOrganizerScreen(
     val currentTheme = LocalTheme.current
     val rules by viewModel.rules.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
+    var editingRule by remember { mutableStateOf<OrganizerRule?>(null) }
 
     Scaffold(
         topBar = {
@@ -87,6 +89,7 @@ fun SmartOrganizerScreen(
                         RuleCard(
                             rule = rule,
                             accentColor = currentTheme.accentColor,
+                            onEdit = { editingRule = rule },
                             onDelete = { viewModel.deleteRule(rule) },
                             onToggle = { viewModel.toggleRule(rule) }
                         )
@@ -97,11 +100,22 @@ fun SmartOrganizerScreen(
     }
 
     if (showAddDialog) {
-        AddRuleDialog(
+        RuleEditorDialog(
             onDismiss = { showAddDialog = false },
             onConfirm = { rule ->
                 viewModel.addRule(rule)
                 showAddDialog = false
+            }
+        )
+    }
+
+    if (editingRule != null) {
+        RuleEditorDialog(
+            rule = editingRule,
+            onDismiss = { editingRule = null },
+            onConfirm = { updatedRule ->
+                viewModel.addRule(updatedRule) // addRule uses repository.insertRule(rule) which is onConflict = REPLACE
+                editingRule = null
             }
         )
     }
@@ -138,6 +152,7 @@ fun EmptyState(accentColor: Color) {
 fun RuleCard(
     rule: OrganizerRule,
     accentColor: Color,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
     onToggle: () -> Unit
 ) {
@@ -177,9 +192,14 @@ fun RuleCard(
                     color = if (rule.isEnabled) Color.White else Color.Gray
                 )
                 Text(
-                    "${rule.sourcePath} -> ${rule.targetPath}",
+                    if (rule.sourcePaths.size == 1) rule.sourcePaths[0] else "${rule.sourcePaths.size} source folders",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.5f)
+                )
+                Text(
+                    "→ ${rule.targetPath}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = accentColor.copy(alpha = 0.7f)
                 )
             }
             
@@ -194,6 +214,11 @@ fun RuleCard(
                     Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = Color.White.copy(alpha = 0.5f))
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Edit") },
+                        onClick = { onEdit(); showMenu = false },
+                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                    )
                     DropdownMenuItem(
                         text = { Text("Delete") },
                         onClick = { onDelete(); showMenu = false },

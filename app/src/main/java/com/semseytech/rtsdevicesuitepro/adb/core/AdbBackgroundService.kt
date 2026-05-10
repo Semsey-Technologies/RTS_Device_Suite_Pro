@@ -47,10 +47,18 @@ class AdbBackgroundService : Service() {
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            startForeground(1001, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+            } else {
+                startForeground(1001, notification)
+            }
+        } catch (e: Exception) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && e is ForegroundServiceStartNotAllowedException) {
+                Log.e(TAG, "Foreground service start not allowed from background", e)
+            } else {
+                Log.e(TAG, "Failed to start foreground service", e)
+            }
         }
     }
 
@@ -89,6 +97,11 @@ class AdbBackgroundService : Service() {
                 delay(10000) // Retry every 10 seconds if not connected or discovery fails
             }
         }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startForegroundService()
+        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

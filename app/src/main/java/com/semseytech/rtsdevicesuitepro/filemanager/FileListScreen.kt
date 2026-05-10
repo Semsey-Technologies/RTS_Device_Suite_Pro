@@ -1,5 +1,6 @@
 package com.semseytech.rtsdevicesuitepro.filemanager
 
+import android.webkit.MimeTypeMap
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,11 +14,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import com.semseytech.rtsdevicesuitepro.ui.theme.LocalTheme
 import com.semseytech.rtsdevicesuitepro.ui.theme.ThemeManager
 import com.semseytech.rtsdevicesuitepro.ui.theme.ThemePreset
@@ -32,8 +35,14 @@ fun FileListScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val theme = LocalTheme.current
+    val context = LocalContext.current
     val scale = ThemeManager.uiScale
+    val scope = rememberCoroutineScope()
     var showSystemAccessWarning by remember { mutableStateOf(false) }
+    var itemToFavorite by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var showCreateDialog by remember { mutableStateOf<String?>(null) } // "folder", "text", "script"
+    var targetPathForCreate by remember { mutableStateOf(path) }
+    var isLeftPaneForCreate by remember { mutableStateOf(true) }
 
     // On first load, check if the initial path is SMB and load it into the primary pane
     LaunchedEffect(path) {
@@ -84,6 +93,56 @@ fun FileListScreen(
                                     tint = theme.accentColor
                                 )
                             }
+                            
+                            var showGlobalMenu by remember { mutableStateOf(false) }
+                            Box {
+                                IconButton(onClick = { showGlobalMenu = true }) {
+                                    Icon(Icons.Default.MoreVert, "Global Menu", tint = theme.accentColor)
+                                }
+                                DropdownMenu(
+                                    expanded = showGlobalMenu,
+                                    onDismissRequest = { showGlobalMenu = false },
+                                    containerColor = Color(0xFF1A1A1A)
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("New Folder", color = Color.White) },
+                                        leadingIcon = { Icon(Icons.Default.CreateNewFolder, null, tint = theme.accentColor) },
+                                        onClick = {
+                                            showCreateDialog = "folder"
+                                            targetPathForCreate = uiState.leftPane.currentPath
+                                            isLeftPaneForCreate = true
+                                            showGlobalMenu = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("New Text Document", color = Color.White) },
+                                        leadingIcon = { Icon(Icons.Default.NoteAdd, null, tint = theme.accentColor) },
+                                        onClick = {
+                                            scope.launch {
+                                                val name = viewModel.generateUniqueName(uiState.leftPane.currentPath, "New Document", "txt")
+                                                viewModel.createFile(uiState.leftPane.currentPath, name, true) { filePath ->
+                                                    onNavigate("text_editor?path=${java.net.URLEncoder.encode(filePath, "UTF-8")}")
+                                                }
+                                            }
+                                            showGlobalMenu = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("New Script (.sh)", color = Color.White) },
+                                        leadingIcon = { Icon(Icons.Default.Code, null, tint = theme.accentColor) },
+                                        onClick = {
+                                            scope.launch {
+                                                val name = viewModel.generateUniqueName(uiState.leftPane.currentPath, "New Script", "sh")
+                                                viewModel.createFile(uiState.leftPane.currentPath, name, true) { filePath ->
+                                                    onNavigate("text_editor?path=${java.net.URLEncoder.encode(filePath, "UTF-8")}")
+                                                }
+                                            }
+                                            showGlobalMenu = false
+                                        }
+                                    )
+                                }
+                            }
+
                             IconButton(onClick = onBack) {
                                 Icon(Icons.Default.Close, "Exit", tint = Color.Gray)
                             }
@@ -92,34 +151,139 @@ fun FileListScreen(
 
                     // Address Bar for Single Pane
                     if (!uiState.isSplitScreen) {
-                        SinglePaneNavigation(viewModel, uiState.leftPane, theme, true)
+                        SinglePaneNavigation(viewModel, uiState.leftPane, theme, true) { path: String, name: String ->
+                            itemToFavorite = path to name
+                        }
                     }
                 }
             }
         },
-        containerColor = theme.startColor
+        containerColor = theme.startColor,
+        floatingActionButton = {
+            var showFabMenu by remember { mutableStateOf(false) }
+            Column(horizontalAlignment = Alignment.End) {
+                if (showFabMenu) {
+                    SmallFloatingActionButton(
+                        onClick = {
+                            showCreateDialog = "folder"
+                            targetPathForCreate = uiState.leftPane.currentPath
+                            isLeftPaneForCreate = true
+                            showFabMenu = false
+                        },
+                        containerColor = theme.accentColor,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) { Icon(Icons.Default.CreateNewFolder, "New Folder") }
+                    
+                    SmallFloatingActionButton(
+                        onClick = {
+                            scope.launch {
+                                val name = viewModel.generateUniqueName(uiState.leftPane.currentPath, "New Document", "txt")
+                                viewModel.createFile(uiState.leftPane.currentPath, name, true) { filePath ->
+                                    onNavigate("text_editor?path=${java.net.URLEncoder.encode(filePath, "UTF-8")}")
+                                }
+                            }
+                            showFabMenu = false
+                        },
+                        containerColor = theme.accentColor,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) { Icon(Icons.Default.NoteAdd, "New Text") }
+
+                    SmallFloatingActionButton(
+                        onClick = {
+                            scope.launch {
+                                val name = viewModel.generateUniqueName(uiState.leftPane.currentPath, "New Script", "sh")
+                                viewModel.createFile(uiState.leftPane.currentPath, name, true) { filePath ->
+                                    onNavigate("text_editor?path=${java.net.URLEncoder.encode(filePath, "UTF-8")}")
+                                }
+                            }
+                            showFabMenu = false
+                        },
+                        containerColor = theme.accentColor,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) { Icon(Icons.Default.Code, "New Script") }
+                }
+                FloatingActionButton(
+                    onClick = { showFabMenu = !showFabMenu },
+                    containerColor = theme.accentColor,
+                    contentColor = Color.Black
+                ) {
+                    Icon(if (showFabMenu) Icons.Default.Close else Icons.Default.Add, "Create New")
+                }
+            }
+        }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
             if (uiState.isSplitScreen) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     Box(modifier = Modifier.weight(1f)) { 
                         Column {
-                            SinglePaneNavigation(viewModel, uiState.leftPane, theme, true)
-                            ExplorerPane(true, viewModel, theme, scale) 
+                            SinglePaneNavigation(viewModel, uiState.leftPane, theme, true) { path: String, name: String ->
+                                itemToFavorite = path to name
+                            }
+                            ExplorerPane(true, viewModel, theme, scale, onFavorite = { path: String, name: String ->
+                                itemToFavorite = path to name
+                            }, onNavigate = onNavigate)
                         }
                     }
                     HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 1.dp)
                     Box(modifier = Modifier.weight(1f)) { 
                         Column {
-                            SinglePaneNavigation(viewModel, uiState.rightPane, theme, false)
-                            ExplorerPane(false, viewModel, theme, scale) 
+                            SinglePaneNavigation(viewModel, uiState.rightPane, theme, false) { path: String, name: String ->
+                                itemToFavorite = path to name
+                            }
+                            ExplorerPane(false, viewModel, theme, scale, onFavorite = { path: String, name: String ->
+                                itemToFavorite = path to name
+                            }, onNavigate = onNavigate)
                         }
                     }
                 }
             } else {
-                ExplorerPane(true, viewModel, theme, scale)
+                ExplorerPane(true, viewModel, theme, scale, onFavorite = { path: String, name: String ->
+                    itemToFavorite = path to name
+                }, onNavigate = onNavigate)
             }
         }
+    }
+
+    if (showCreateDialog == "folder") {
+        var folderName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = null },
+            title = { Text("New Folder", color = theme.accentColor) },
+            text = {
+                OutlinedTextField(
+                    value = folderName,
+                    onValueChange = { folderName = it },
+                    label = { Text("Folder Name") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    scope.launch {
+                        val finalName = if (folderName.isBlank()) "New Folder" else folderName
+                        val uniqueName = viewModel.generateUniqueName(targetPathForCreate, finalName)
+                        viewModel.createFolder(targetPathForCreate, uniqueName, isLeftPaneForCreate)
+                        showCreateDialog = null
+                    }
+                }) { Text("Create") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateDialog = null }) { Text("Cancel") }
+            },
+            containerColor = Color(0xFF1A1A1A)
+        )
+    }
+
+    if (itemToFavorite != null) {
+        FavoriteNamingDialog(
+            defaultName = itemToFavorite!!.second,
+            onDismiss = { itemToFavorite = null },
+            onConfirm = { customName ->
+                viewModel.addFavorite(itemToFavorite!!.first, customName)
+                itemToFavorite = null
+            }
+        )
     }
 
     if (showSystemAccessWarning) {
@@ -161,9 +325,12 @@ fun SinglePaneNavigation(
     viewModel: FileExplorerViewModel,
     pane: PaneState,
     theme: ThemePreset,
-    isLeft: Boolean
+    isLeft: Boolean,
+    onFavorite: (String, String) -> Unit
 ) {
     val clipboard by viewModel.clipboard.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
+    val isFavorited = uiState.favorites.any { it.path == pane.currentPath }
     
     Row(
         modifier = Modifier
@@ -202,6 +369,21 @@ fun SinglePaneNavigation(
             viewModel.loadPath(path, isLeft)
         }
 
+        IconButton(onClick = { 
+            if (isFavorited) {
+                viewModel.removeFavoriteByPath(pane.currentPath)
+            } else {
+                val name = pane.currentPath.trimEnd('/').split("/").lastOrNull()?.takeIf { it.isNotEmpty() } ?: "Folder"
+                onFavorite(pane.currentPath, name) 
+            }
+        }) {
+            Icon(
+                if (isFavorited) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                "Favorite",
+                tint = if (isFavorited) Color.Red else theme.accentColor
+            )
+        }
+
         if (clipboard != null) {
             IconButton(onClick = { viewModel.paste(pane.currentPath, isLeft) }) {
                 Icon(Icons.Default.ContentPaste, "Paste", tint = theme.accentColor)
@@ -215,15 +397,22 @@ fun ExplorerPane(
     isLeftPane: Boolean,
     viewModel: FileExplorerViewModel,
     theme: ThemePreset,
-    scale: Float
+    scale: Float,
+    onFavorite: (String, String) -> Unit,
+    onNavigate: (String) -> Unit
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val pane = if (isLeftPane) uiState.leftPane else uiState.rightPane
+    val scope = rememberCoroutineScope()
 
     var selectedItemForMenu by remember { mutableStateOf<ExplorerFileItem?>(null) }
     var itemToRename by remember { mutableStateOf<ExplorerFileItem?>(null) }
     var itemToDelete by remember { mutableStateOf<ExplorerFileItem?>(null) }
     var showPropertiesFor by remember { mutableStateOf<ExplorerFileItem?>(null) }
+    
+    var showCreateDialogInPane by remember { mutableStateOf<String?>(null) }
+    var targetPathForCreateInPane by remember { mutableStateOf(pane.currentPath) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (pane.isScanning) {
@@ -248,6 +437,11 @@ fun ExplorerPane(
                     ) {
                         if (item.isDirectory) {
                             viewModel.loadPath(item.path, isLeftPane)
+                        } else {
+                            val ext = item.name.substringAfterLast('.', "").lowercase()
+                            if (listOf("txt", "sh", "py", "js").contains(ext)) {
+                                onNavigate("text_editor?path=${java.net.URLEncoder.encode(item.path, "UTF-8")}")
+                            }
                         }
                     }
                 }
@@ -257,16 +451,82 @@ fun ExplorerPane(
 
     if (selectedItemForMenu != null) {
         val item = selectedItemForMenu!!
-        FileActionBottomSheet(item, onAction = { action ->
-            when (action) {
-                "copy" -> viewModel.copyToClipboard(item, false)
-                "move" -> viewModel.copyToClipboard(item, true)
-                "rename" -> itemToRename = item
-                "delete" -> itemToDelete = item
-                "properties" -> showPropertiesFor = item
+        val isFavorited = uiState.favorites.any { it.path == item.path }
+        
+        FileActionBottomSheet(
+            item = item, 
+            isFavorited = isFavorited,
+            onAction = { action ->
+                when (action) {
+                    "copy" -> viewModel.copyToClipboard(item, false)
+                    "move" -> viewModel.copyToClipboard(item, true)
+                    "rename" -> itemToRename = item
+                    "delete" -> itemToDelete = item
+                    "properties" -> showPropertiesFor = item
+                    "favorite" -> {
+                        if (isFavorited) {
+                            viewModel.removeFavoriteByPath(item.path)
+                        } else {
+                            onFavorite(item.path, item.name)
+                        }
+                    }
+                    "new_folder" -> {
+                        targetPathForCreateInPane = item.path
+                        showCreateDialogInPane = "folder"
+                    }
+                    "new_text" -> {
+                        scope.launch {
+                            val name = viewModel.generateUniqueName(item.path, "New Document", "txt")
+                            viewModel.createFile(item.path, name, isLeftPane) { filePath ->
+                                onNavigate("text_editor?path=${java.net.URLEncoder.encode(filePath, "UTF-8")}")
+                            }
+                        }
+                    }
+                    "new_script" -> {
+                        scope.launch {
+                            val name = viewModel.generateUniqueName(item.path, "New Script", "sh")
+                            viewModel.createFile(item.path, name, isLeftPane) { filePath ->
+                                onNavigate("text_editor?path=${java.net.URLEncoder.encode(filePath, "UTF-8")}")
+                            }
+                        }
+                    }
+                    "open_with" -> {
+                        viewModel.openWith(context, item)
+                    }
+                }
+                selectedItemForMenu = null
             }
-            selectedItemForMenu = null
-        })
+        )
+    }
+
+    if (showCreateDialogInPane == "folder") {
+        var folderName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showCreateDialogInPane = null },
+            title = { Text("New Folder", color = theme.accentColor) },
+            text = {
+                OutlinedTextField(
+                    value = folderName,
+                    onValueChange = { folderName = it },
+                    label = { Text("Folder Name") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    scope.launch {
+                        val finalName = if (folderName.isBlank()) "New Folder" else folderName
+                        val uniqueName = viewModel.generateUniqueName(targetPathForCreateInPane, finalName)
+                        viewModel.createFolder(targetPathForCreateInPane, uniqueName, isLeftPane)
+                        showCreateDialogInPane = null
+                    }
+                }) { Text("Create") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateDialogInPane = null }) { Text("Cancel") }
+            },
+            containerColor = Color(0xFF1A1A1A)
+        )
     }
 
     if (itemToRename != null) {
@@ -356,12 +616,34 @@ fun ErrorMessage(msg: String, onRetry: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FileActionBottomSheet(item: ExplorerFileItem, onAction: (String) -> Unit) {
+fun FileActionBottomSheet(
+    item: ExplorerFileItem, 
+    isFavorited: Boolean = false,
+    onAction: (String) -> Unit
+) {
     ModalBottomSheet(onDismissRequest = { onAction("none") }) {
+        val theme = LocalTheme.current
         Column(modifier = Modifier.padding(16.dp).padding(bottom = 32.dp)) {
             Text(item.name, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp))
+            
+            if (item.isDirectory) {
+                FileActionItem(
+                    if (isFavorited) Icons.Default.Favorite else Icons.Default.FavoriteBorder, 
+                    if (isFavorited) "Remove from Favorites" else "Add to Favorites"
+                ) { onAction("favorite") }
+                
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color.White.copy(alpha = 0.1f))
+                
+                FileActionItem(Icons.Default.CreateNewFolder, "New Folder", theme.accentColor) { onAction("new_folder") }
+                FileActionItem(Icons.Default.NoteAdd, "New Text Document", theme.accentColor) { onAction("new_text") }
+                FileActionItem(Icons.Default.Code, "New Script (.sh)", theme.accentColor) { onAction("new_script") }
+                
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color.White.copy(alpha = 0.1f))
+            }
+
             FileActionItem(Icons.Default.ContentCopy, "Copy") { onAction("copy") }
             FileActionItem(Icons.Default.ContentCut, "Move") { onAction("move") }
+            FileActionItem(Icons.Default.OpenInNew, "Open with...") { onAction("open_with") }
             FileActionItem(Icons.Default.Edit, "Rename") { onAction("rename") }
             FileActionItem(Icons.Default.Delete, "Delete", Color.Red) { onAction("delete") }
             FileActionItem(Icons.Default.Info, "Properties") { onAction("properties") }
@@ -413,11 +695,40 @@ fun RenameDialog(item: ExplorerFileItem, onDismiss: () -> Unit, onRename: (Strin
 }
 
 @Composable
+fun FavoriteNamingDialog(defaultName: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var name by remember { mutableStateOf(defaultName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Name Favorite") },
+        text = { 
+            Column {
+                Text("Enter a name for this favorite location:", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = name, 
+                    onValueChange = { name = it }, 
+                    label = { Text("Favorite Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                ) 
+            }
+        },
+        confirmButton = { 
+            Button(onClick = { onConfirm(name) }) { Text("Save Favorite") } 
+        },
+        dismissButton = { 
+            TextButton(onClick = onDismiss) { Text("Cancel") } 
+        },
+        containerColor = Color(0xFF1A1A1A)
+    )
+}
+
+@Composable
 fun DeleteDialog(item: ExplorerFileItem, onDismiss: () -> Unit, onDelete: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Delete?") },
-        text = { Text("Are you sure you want to delete '${item.name}'?") },
+        text = { Text("Are you sure you want to delete \u0027${item.name}\u0027?") },
         confirmButton = { Button(onClick = onDelete, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) { Text("Delete") } },
         dismissButton = { TextButton(onClick = { onDismiss() }) { Text("Cancel") } }
     )
